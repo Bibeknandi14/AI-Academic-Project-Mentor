@@ -1,0 +1,126 @@
+import React, { useState, useEffect } from 'react';
+import { GitCommit, RefreshCw, ExternalLink, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import api from '../services/api';
+
+const GitHubCommitFeed = ({ projectId, githubRepo }) => {
+  const [commits, setCommits] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
+
+  useEffect(() => {
+    fetchCommits();
+  }, [projectId]);
+
+  const fetchCommits = async () => {
+    try {
+      const res = await api.get(`/github/commits/${projectId}`);
+      setCommits(res.data);
+    } catch (err) {
+      console.error("Failed to fetch commit log", err);
+    }
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await api.post(`/github/sync/${projectId}`);
+      setSyncResult(res.data);
+      fetchCommits();
+    } catch (err) {
+      console.error("GitHub sync failed", err);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-5 rounded-2xl border border-slate-800/80">
+        <div>
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <GitCommit className="h-5 w-5 text-indigo-400" />
+            GitHub Commit Progress Tracker
+          </h3>
+          <p className="text-xs text-slate-400 mt-1">
+            Repo Link: <span className="font-mono text-indigo-300">{githubRepo || 'Not configured'}</span>
+          </p>
+        </div>
+
+        <button
+          onClick={handleSync}
+          disabled={syncing}
+          className="glass-button-primary flex items-center gap-2 text-sm"
+        >
+          <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+          {syncing ? 'Syncing GitHub...' : 'Sync Commits'}
+        </button>
+      </div>
+
+      {syncResult && (
+        <div className="p-4 rounded-xl bg-indigo-950/60 border border-indigo-800/50 text-indigo-300 text-xs flex items-center justify-between">
+          <span>
+            Synced <strong>{syncResult.synced_commits || 0}</strong> new commits & auto-updated <strong>{syncResult.updated_tasks || 0}</strong> Kanban tasks.
+          </span>
+        </div>
+      )}
+
+      <div className="glass-card p-6 space-y-4">
+        <h4 className="font-bold text-sm text-slate-200 uppercase tracking-wider">Commit Log Timeline</h4>
+
+        {commits.length === 0 ? (
+          <div className="text-center py-12 text-slate-400 text-sm">
+            No commits recorded yet. Click "Sync Commits" above to ingest repository activity.
+          </div>
+        ) : (
+          <div className="relative border-l border-slate-800 ml-4 space-y-6 pl-6 py-2">
+            {commits.map((c) => (
+              <div key={c.id} className="relative group">
+                <div className="absolute -left-[31px] top-1.5 h-3.5 w-3.5 rounded-full bg-indigo-600 border-2 border-slate-950 group-hover:scale-125 transition-transform" />
+
+                <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition-all space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-indigo-400 bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-900/40">
+                        {c.commit_hash}
+                      </span>
+                      <span className="text-slate-300 font-medium">{c.author_name}</span>
+                    </div>
+                    <span className="text-slate-400 text-[11px]">
+                      {new Date(c.commit_date).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <p className="text-sm font-semibold text-slate-200">{c.message}</p>
+
+                  <div className="flex items-center justify-between pt-2 text-xs">
+                    {c.task_id ? (
+                      <span className="text-emerald-400 flex items-center gap-1 font-medium text-[11px] bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-900/40">
+                        <CheckCircle2 className="h-3 w-3" /> Auto-Linked to Kanban Task
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 text-[11px]">General Commit</span>
+                    )}
+
+                    {c.url && (
+                      <a
+                        href={c.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium"
+                      >
+                        View Diff <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default GitHubCommitFeed;
