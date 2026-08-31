@@ -31,10 +31,6 @@ async def list_projects(
             .where(ProjectMember.user_id == current_user.id)
         )
         projects = result.scalars().all()
-        if not projects:
-            # Fallback to all projects if member table is empty
-            res_all = await db.execute(select(Project))
-            projects = res_all.scalars().all()
 
     project_list = []
     for proj in projects:

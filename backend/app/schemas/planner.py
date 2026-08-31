@@ -16,12 +16,20 @@ class PlannedEpic(BaseModel):
 class RoadmapGenerationInput(BaseModel):
     idea_title: str
     idea_description: str
-    tech_stack: Optional[List[str]] = ["React", "FastAPI", "PostgreSQL"]
+    tech_stack: Optional[List[str]] = Field(default=None, description="Optional student tech stack preference")
     duration_weeks: Optional[int] = 4
     team_size: Optional[int] = 2
 
 class RoadmapGenerationOutput(BaseModel):
-    project_summary: str
-    recommended_architecture: str
+    identified_requirements: List[str] = Field(
+        ...,
+        description="Key technical requirements identified from the project idea (e.g. 'Semantic text embeddings & vector similarity', 'Relational CRUD storage, no ML needed', 'Image upload & CNN inference pipeline')"
+    )
+    suggested_tech_stack: List[str] = Field(
+        ...,
+        description="Curated, student-feasible technology stack tailored to the identified requirements (frontend, backend, database, and any necessary libraries/models)"
+    )
+    project_summary: str = Field(..., description="Concise summary of the project architecture and workflow")
+    recommended_architecture: str = Field(..., description="High-level architectural overview suitable for a student project")
     epics: List[PlannedEpic]
     tasks: List[PlannedTask]
