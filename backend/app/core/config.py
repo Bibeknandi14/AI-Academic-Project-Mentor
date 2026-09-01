@@ -1,6 +1,10 @@
 import os
 from typing import List, Optional
 from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
+
+# 🔥 FORCE Python to load the .env file right now
+load_dotenv()
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AI Guided Project Progress Tracking Platform"

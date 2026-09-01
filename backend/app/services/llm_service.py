@@ -12,7 +12,12 @@ T = TypeVar("T", bound=BaseModel)
 
 class BaseLLMProvider(ABC):
     @abstractmethod
-    async def generate_text(self, prompt: str, system_instruction: Optional[str] = None) -> str:
+    async def generate_text(
+        self,
+        prompt: str,
+        system_instruction: Optional[str] = None,
+        response_mime_type: Optional[str] = None
+    ) -> str:
         pass
 
     async def generate_structured_json(
@@ -35,7 +40,11 @@ class BaseLLMProvider(ABC):
 
         for attempt in range(max_retries):
             try:
-                raw_response = await self.generate_text(current_prompt, system_instruction)
+                raw_response = await self.generate_text(
+                    current_prompt,
+                    system_instruction,
+                    response_mime_type="application/json"
+                )
                 # Clean response markdown if present
                 clean_json_str = raw_response.strip()
                 if clean_json_str.startswith("```json"):
@@ -62,43 +71,73 @@ class BaseLLMProvider(ABC):
 
 
 class GeminiLLMProvider(BaseLLMProvider):
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, model: str = "gemini-3.6-flash"):
         self.api_key = api_key
+        self.model = model
 
-    async def generate_text(self, prompt: str, system_instruction: Optional[str] = None) -> str:
-        try:
-            import httpx
-            # Use Gemini REST API with native system_instruction and application/json format
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={self.api_key}"
-            
-            payload = {
-                "contents": [
-                    {"role": "user", "parts": [{"text": prompt}]}
-                ],
-                "generationConfig": {
-                    "responseMimeType": "application/json",
-                    "temperature": 0.4
-                }
+    async def generate_text(
+        self,
+        prompt: str,
+        system_instruction: Optional[str] = None,
+        response_mime_type: Optional[str] = None
+    ) -> str:
+        import httpx
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        
+        gen_config: Dict[str, Any] = {
+            "temperature": 0.4
+        }
+        if response_mime_type:
+            gen_config["responseMimeType"] = response_mime_type
+
+        payload: Dict[str, Any] = {
+            "contents": [
+                {"role": "user", "parts": [{"text": prompt}]}
+            ],
+            "generationConfig": gen_config
+        }
+        if system_instruction:
+            payload["systemInstruction"] = {
+                "parts": [{"text": system_instruction}]
             }
-            if system_instruction:
-                payload["systemInstruction"] = {
-                    "parts": [{"text": system_instruction}]
-                }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, json=payload)
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(url, json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                return text
-        except Exception as e:
-            logger.error(f"Gemini API error: {e}, falling back to intelligent response generator")
-            mock = MockLLMProvider()
-            return await mock.generate_text(prompt, system_instruction)
+            # If Gemini fails, raise a descriptive error
+            if resp.status_code != 200:
+                error_msg = f"Gemini API Failed with Status {resp.status_code}: {resp.text}"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+                
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                feedback = data.get("promptFeedback", {})
+                block_reason = feedback.get("blockReason", "Unknown")
+                raise ValueError(f"Gemini API returned no candidates (Block reason: {block_reason}). Full response: {data}")
+            
+            first_candidate = candidates[0]
+            content = first_candidate.get("content", {})
+            parts = content.get("parts", [])
+            if not parts:
+                finish_reason = first_candidate.get("finishReason", "Unknown")
+                raise ValueError(f"Gemini API returned candidate with no parts (finishReason: {finish_reason}). Full response: {data}")
+            
+            text_parts = [p.get("text", "") for p in parts if isinstance(p, dict) and "text" in p]
+            text = "".join(text_parts).strip()
+            if not text:
+                raise ValueError(f"Gemini API returned empty text part. Full response: {data}")
+            return text
 
 
 class MockLLMProvider(BaseLLMProvider):
-    async def generate_text(self, prompt: str, system_instruction: Optional[str] = None) -> str:
+    async def generate_text(
+        self,
+        prompt: str,
+        system_instruction: Optional[str] = None,
+        response_mime_type: Optional[str] = None
+    ) -> str:
         p_lower = prompt.lower()
         if "schema" in p_lower or "epics" in p_lower or "roadmap" in p_lower:
             # Isolate user project content before schema section to avoid false positive keyword matching
@@ -356,6 +395,6 @@ class MockLLMProvider(BaseLLMProvider):
 def get_llm_provider() -> BaseLLMProvider:
     if settings.LLM_PROVIDER == "gemini" and settings.GEMINI_API_KEY:
         return GeminiLLMProvider(settings.GEMINI_API_KEY)
-    elif settings.LLM_PROVIDER == "openai" and settings.OPENAI_API_KEY:
-        return MockLLMProvider()
-    return MockLLMProvider()
+    
+    # Crash loudly if the .env is missing the key
+    raise ValueError("GEMINI_API_KEY is missing or LLM_PROVIDER is not set to 'gemini' in your .env file!")

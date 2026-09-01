@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.db.session import engine, Base
-from app.api import auth, projects, tasks, planner, github, mentorship
+from app.api import auth, projects, tasks, planner, github, mentorship, mentor, chat
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -35,6 +35,8 @@ app.include_router(tasks.router, prefix=settings.API_V1_STR)
 app.include_router(planner.router, prefix=settings.API_V1_STR)
 app.include_router(github.router, prefix=settings.API_V1_STR)
 app.include_router(mentorship.router, prefix=settings.API_V1_STR)
+app.include_router(mentor.router, prefix=settings.API_V1_STR)
+app.include_router(chat.router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 async def root():

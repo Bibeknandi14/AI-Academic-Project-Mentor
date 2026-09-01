@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Sparkles, GitCommit, CheckCircle, Code, Info, Terminal } from 'lucide-react';
+import { Send, Bot, User, Sparkles, CheckCircle, Code, Info, Terminal, AlertCircle, RefreshCw, X } from 'lucide-react';
 import api from '../services/api';
 
 const MentorshipChat = ({ projectId, activeTask }) => {
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [lastFailedQuestion, setLastFailedQuestion] = useState('');
   const [selectedContext, setSelectedContext] = useState(null);
   const messagesEndRef = useRef(null);
 
@@ -15,7 +17,7 @@ const MentorshipChat = ({ projectId, activeTask }) => {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+  }, [messages, loading, error]);
 
   const fetchHistory = async () => {
     try {
@@ -26,13 +28,25 @@ const MentorshipChat = ({ projectId, activeTask }) => {
     }
   };
 
-  const handleSend = async (e) => {
-    e.preventDefault();
-    if (!question.trim() || loading) return;
+  const sendMessage = async (textToSend) => {
+    if (!textToSend.trim() || loading) return;
 
-    const userText = question;
+    const userText = textToSend.trim();
     setQuestion('');
+    setError(null);
     setLoading(true);
+    setLastFailedQuestion('');
+
+    // Immediately add optimistic user message to the UI feed so it never vanishes
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMessage = {
+      id: tempId,
+      project_id: projectId,
+      sender: 'USER',
+      message: userText,
+      created_at: new Date().toISOString()
+    };
+    setMessages((prev) => [...prev, optimisticMessage]);
 
     try {
       const res = await api.post('/mentorship/chat', {
@@ -40,12 +54,40 @@ const MentorshipChat = ({ projectId, activeTask }) => {
         active_task_id: activeTask?.id || null,
         question: userText
       });
+
+      // Append AI response
       setMessages((prev) => [...prev, res.data]);
     } catch (err) {
       console.error("Mentorship chat request failed", err);
+      const errorDetail =
+        err.response?.data?.detail ||
+        err.response?.data?.message ||
+        err.message ||
+        "Failed to connect with AI Mentor. Please try again.";
+      setError(errorDetail);
+      setLastFailedQuestion(userText);
     } finally {
       setLoading(false);
-      fetchHistory();
+      // Synchronize with database history in the background
+      try {
+        const res = await api.get(`/mentorship/history/${projectId}`);
+        if (res.data && res.data.length > 0) {
+          setMessages(res.data);
+        }
+      } catch (e) {
+        // Keep optimistic state if background refresh fails
+      }
+    }
+  };
+
+  const handleSend = (e) => {
+    e.preventDefault();
+    sendMessage(question);
+  };
+
+  const handleRetry = () => {
+    if (lastFailedQuestion) {
+      sendMessage(lastFailedQuestion);
     }
   };
 
@@ -144,10 +186,41 @@ const MentorshipChat = ({ projectId, activeTask }) => {
             </div>
             <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 text-slate-400 text-xs flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-indigo-400 animate-pulse" />
-              Fetching GitHub commit diffs & injecting task context into Gemini LLM...
+              Generating grounded mentorship advice for your active task...
             </div>
           </div>
         )}
+
+        {/* Inline Error Toast / Alert */}
+        {error && (
+          <div className="flex items-center justify-between gap-3 p-3.5 bg-rose-950/50 border border-rose-800/60 rounded-xl text-rose-300 text-xs animate-in fade-in slide-in-from-bottom-2">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+              <span>{error}</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {lastFailedQuestion && (
+                <button
+                  type="button"
+                  onClick={handleRetry}
+                  disabled={loading}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-900/60 hover:bg-rose-800/80 border border-rose-700/50 rounded-lg text-[11px] text-rose-200 font-medium transition-colors"
+                >
+                  <RefreshCw className="h-3 w-3" /> Retry
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="p-1 text-rose-400 hover:text-rose-200 transition-colors"
+                aria-label="Dismiss error"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -163,7 +236,7 @@ const MentorshipChat = ({ projectId, activeTask }) => {
         <button
           type="submit"
           disabled={loading || !question.trim()}
-          className="glass-button-primary flex items-center gap-2 text-sm py-2.5"
+          className="glass-button-primary flex items-center gap-2 text-sm py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Send className="h-4 w-4" />
           Send

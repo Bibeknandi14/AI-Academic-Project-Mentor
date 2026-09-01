@@ -24,6 +24,7 @@ async def get_project_tasks(
     tasks = result.scalars().all()
     return tasks
 
+@router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
     task_in: TaskCreate,
