@@ -3,13 +3,15 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import patch, AsyncMock
 from app.main import app
-from app.services.llm_service import GeminiLLMProvider, MockLLMProvider
+from app.core.config import settings
+from app.services.llm_service import GeminiLLMProvider, MockLLMProvider, GeminiQuotaExceededError
 from app.schemas.planner import RoadmapGenerationOutput
+from app.services.mentorship_service import _MENTORSHIP_QUERY_CACHE
 
 @pytest.mark.asyncio
 async def test_gemini_provider_url_and_plain_text():
     provider = GeminiLLMProvider(api_key="test-api-key")
-    assert provider.model == "gemini-3.6-flash"
+    assert provider.model == settings.GEMINI_MODEL
 
     # Test plain text generation payload & parsing
     fake_gemini_response = {
@@ -33,12 +35,12 @@ async def test_gemini_provider_url_and_plain_text():
         result = await provider.generate_text("How do I structure my project?")
         assert result == "Hello, student! Here is your plain text mentorship advice."
         
-        # Verify URL called uses gemini-3.6-flash
+        # Verify URL called uses configured model
         call_args = mock_post.call_args
         called_url = call_args[0][0]
         called_json = call_args[1]["json"]
         
-        assert "models/gemini-3.6-flash:generateContent" in called_url
+        assert f"models/{settings.GEMINI_MODEL}:generateContent" in called_url
         assert "key=test-api-key" in called_url
         # For plain text, responseMimeType should not be set to application/json
         assert "responseMimeType" not in called_json.get("generationConfig", {})
@@ -264,4 +266,256 @@ async def test_mentor_chat_without_github_connected_smooth_fallback():
             assert "Implement Token Bucket Algorithm" in sent_prompt
             assert "Write sliding window rate limiter" in sent_prompt
             assert "No GitHub repository connected" in sent_prompt
+
+
+@pytest.mark.asyncio
+async def test_gemini_retry_on_network_errors_and_backoff():
+    provider = GeminiLLMProvider(api_key="test-api-key")
+
+    mock_resp_success = AsyncMock()
+    mock_resp_success.status_code = 200
+    mock_resp_success.json = lambda: {
+        "candidates": [{
+            "content": {"parts": [{"text": "Success after transient network glitches!"}]},
+            "finishReason": "STOP"
+        }]
+    }
+
+    # Simulate: 1st call fails with ReadTimeout, 2nd fails with ConnectError, 3rd succeeds
+    call_count = 0
+    async def side_effect_post(url, json=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise import_httpx.ReadTimeout("Read timeout from upstream")
+        elif call_count == 2:
+            raise import_httpx.ConnectError("[Errno 11001] getaddrinfo failed")
+        return mock_resp_success
+
+    import httpx as import_httpx
+    with patch("asyncio.sleep", return_value=None), patch("httpx.AsyncClient.post", side_effect=side_effect_post):
+        result = await provider.generate_text("Test prompt")
+        assert result == "Success after transient network glitches!"
+        assert call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_gemini_retry_exhaustion_logs_clear_error():
+    provider = GeminiLLMProvider(api_key="test-api-key")
+
+    mock_resp_503 = AsyncMock()
+    mock_resp_503.status_code = 503
+    mock_resp_503.reason_phrase = "Service Unavailable"
+    mock_resp_503.text = "This model is currently experiencing high demand"
+
+    with patch("asyncio.sleep", return_value=None), patch("httpx.AsyncClient.post", return_value=mock_resp_503):
+        with pytest.raises(ValueError) as exc_info:
+            await provider.generate_text("Overloaded model prompt")
+        assert "503" in str(exc_info.value)
+        assert "5 attempts" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_planner_generate_graceful_fallback_on_llm_failure():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        test_email = f"student_{uuid.uuid4().hex[:6]}@univ.edu"
+        
+        reg_resp = await ac.post("/api/auth/register", json={
+            "email": test_email,
+            "password": "password123",
+            "full_name": "Planner Fallback Student",
+            "role": "STUDENT"
+        })
+        assert reg_resp.status_code == 201
+
+        login_resp = await ac.post("/api/auth/login", data={
+            "username": test_email,
+            "password": "password123"
+        })
+        token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Simulate Gemini throwing ReadTimeout / 503
+        with patch.object(
+            GeminiLLMProvider,
+            "generate_structured_json",
+            side_effect=ValueError("Gemini API connection/timeout error (ReadTimeout) after 5 attempts")
+        ):
+            planner_payload = {
+                "idea_title": "AI Plant Disease Classifier",
+                "idea_description": "Mobile app allowing farmers to take photos of crops to detect diseases using CNN models.",
+                "tech_stack": ["React Native", "PyTorch"],
+                "duration_weeks": 8,
+                "team_size": 3
+            }
+            res = await ac.post("/api/planner/generate", json=planner_payload, headers=headers)
+            # Must return 200 OK with graceful fallback starter roadmap
+            assert res.status_code == 200
+            data = res.json()
+            assert "identified_requirements" in data
+            assert len(data["identified_requirements"]) > 0
+            assert "suggested_tech_stack" in data
+            assert "PyTorch" in data["suggested_tech_stack"]
+            assert len(data["epics"]) >= 3
+            assert len(data["tasks"]) >= 3
+            assert "Note: Gemini AI is currently experiencing high network demand" in data["stack_rationale"]
+
+
+@pytest.mark.asyncio
+async def test_gemini_quota_exhausted_fails_fast_without_retries():
+    provider = GeminiLLMProvider(api_key="test-api-key")
+
+    mock_resp_429 = AsyncMock()
+    mock_resp_429.status_code = 429
+    mock_resp_429.reason_phrase = "Too Many Requests"
+    mock_resp_429.text = '{"error": {"code": 429, "message": "RESOURCE_EXHAUSTED: quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier"}}'
+
+    call_count = 0
+    async def side_effect_post(url, json=None):
+        nonlocal call_count
+        call_count += 1
+        return mock_resp_429
+
+    with patch("httpx.AsyncClient.post", side_effect=side_effect_post):
+        with pytest.raises(GeminiQuotaExceededError) as exc_info:
+            await provider.generate_text("Student prompt")
+        assert "RESOURCE_EXHAUSTED" in str(exc_info.value)
+        # Verify it failed fast on attempt 1 without sleeping / wasting retries
+        assert call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_mentorship_chat_cache_prevents_duplicate_llm_calls():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        test_email = f"student_{uuid.uuid4().hex[:6]}@univ.edu"
+        
+        reg_resp = await ac.post("/api/auth/register", json={
+            "email": test_email,
+            "password": "password123",
+            "full_name": "Cache Test Student",
+            "role": "STUDENT"
+        })
+        assert reg_resp.status_code == 201
+
+        login_resp = await ac.post("/api/auth/login", data={
+            "username": test_email,
+            "password": "password123"
+        })
+        token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        proj_resp = await ac.post("/api/projects", json={
+            "title": "Caching Test Project",
+            "description": "Testing in-memory cache"
+        }, headers=headers)
+        project_id = proj_resp.json()["id"]
+
+        call_count = 0
+        async def mock_generate(prompt, system_instruction=None, response_mime_type=None, timeout=90.0):
+            nonlocal call_count
+            call_count += 1
+            return f"### AI Response #{call_count}\nAlways validate input schemas with Pydantic."
+
+        with patch.object(GeminiLLMProvider, "generate_text", side_effect=mock_generate):
+            chat_payload = {
+                "project_id": project_id,
+                "question": "How do I validate API inputs with Pydantic?"
+            }
+            # 1. First call: Cache miss, calls LLM
+            res1 = await ac.post("/api/mentorship/chat", json=chat_payload, headers=headers)
+            assert res1.status_code == 200
+            assert "AI Response #1" in res1.json()["message"]
+            assert call_count == 1
+
+            # 2. Second call with identical/similar normalized question: Cache hit, skips LLM
+            res2 = await ac.post("/api/mentorship/chat", json={
+                "project_id": project_id,
+                "question": "  how  do i validate api inputs with pydantic?  "
+            }, headers=headers)
+            assert res2.status_code == 200
+            assert "AI Response #1" in res2.json()["message"]
+            # Call count should STILL be 1 (LLM was NOT called again!)
+            assert call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_mentorship_chat_quota_exhaustion_friendly_message():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        test_email = f"student_{uuid.uuid4().hex[:6]}@univ.edu"
+        
+        reg_resp = await ac.post("/api/auth/register", json={
+            "email": test_email,
+            "password": "password123",
+            "full_name": "Quota Notice Student",
+            "role": "STUDENT"
+        })
+        assert reg_resp.status_code == 201
+
+        login_resp = await ac.post("/api/auth/login", data={
+            "username": test_email,
+            "password": "password123"
+        })
+        token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        proj_resp = await ac.post("/api/projects", json={
+            "title": "Quota Notice Project",
+            "description": "Testing quota notice"
+        }, headers=headers)
+        project_id = proj_resp.json()["id"]
+
+        with patch.object(
+            GeminiLLMProvider,
+            "generate_text",
+            side_effect=GeminiQuotaExceededError("RESOURCE_EXHAUSTED: daily limit reached")
+        ):
+            chat_payload = {
+                "project_id": project_id,
+                "question": "What is the best way to write unit tests for FastAPI?"
+            }
+            res = await ac.post("/api/mentorship/chat", json=chat_payload, headers=headers)
+            assert res.status_code == 200
+            data = res.json()
+            assert data["sender"] == "AI"
+            assert "AI Academic Mentor Notice" in data["message"]
+            assert "free-tier allocation" in data["message"]
+
+
+@pytest.mark.asyncio
+async def test_planner_generate_quota_exhaustion_notice():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        test_email = f"student_{uuid.uuid4().hex[:6]}@univ.edu"
+        
+        reg_resp = await ac.post("/api/auth/register", json={
+            "email": test_email,
+            "password": "password123",
+            "full_name": "Planner Quota Student",
+            "role": "STUDENT"
+        })
+        assert reg_resp.status_code == 201
+
+        login_resp = await ac.post("/api/auth/login", data={
+            "username": test_email,
+            "password": "password123"
+        })
+        token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        with patch.object(
+            GeminiLLMProvider,
+            "generate_structured_json",
+            side_effect=GeminiQuotaExceededError("RESOURCE_EXHAUSTED")
+        ):
+            planner_payload = {
+                "idea_title": "AI Video Captioning Tool",
+                "idea_description": "Speech to text transcript generator using Whisper models.",
+                "duration_weeks": 6,
+                "team_size": 2
+            }
+            res = await ac.post("/api/planner/generate", json=planner_payload, headers=headers)
+            assert res.status_code == 200
+            data = res.json()
+            assert "daily free-tier quota has been reached on this model" in data["stack_rationale"]
+
+
 

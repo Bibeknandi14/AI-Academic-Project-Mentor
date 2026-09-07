@@ -1,7 +1,9 @@
+import asyncio
 import json
 import logging
 from typing import Type, TypeVar, Optional, Dict, Any
 from abc import ABC, abstractmethod
+import httpx
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import settings
@@ -16,7 +18,8 @@ class BaseLLMProvider(ABC):
         self,
         prompt: str,
         system_instruction: Optional[str] = None,
-        response_mime_type: Optional[str] = None
+        response_mime_type: Optional[str] = None,
+        timeout: float = 90.0
     ) -> str:
         pass
 
@@ -25,7 +28,8 @@ class BaseLLMProvider(ABC):
         prompt: str,
         response_schema: Type[T],
         system_instruction: Optional[str] = None,
-        max_retries: int = 3
+        max_retries: int = 3,
+        timeout: float = 120.0
     ) -> T:
         schema_json = json.dumps(response_schema.model_json_schema(), indent=2)
         full_prompt = (
@@ -43,7 +47,8 @@ class BaseLLMProvider(ABC):
                 raw_response = await self.generate_text(
                     current_prompt,
                     system_instruction,
-                    response_mime_type="application/json"
+                    response_mime_type="application/json",
+                    timeout=timeout
                 )
                 # Clean response markdown if present
                 clean_json_str = raw_response.strip()
@@ -59,7 +64,7 @@ class BaseLLMProvider(ABC):
                 validated_obj = response_schema.model_validate(parsed_dict)
                 return validated_obj
             except (json.JSONDecodeError, ValidationError) as e:
-                logger.warning(f"LLM JSON generation attempt {attempt + 1} failed: {e}")
+                logger.warning(f"LLM JSON generation attempt {attempt + 1} validation failed: {e}")
                 last_error = str(e)
                 current_prompt = (
                     f"{full_prompt}\n\n"
@@ -70,18 +75,23 @@ class BaseLLMProvider(ABC):
         raise ValueError(f"Failed to generate valid JSON matching schema after {max_retries} retries. Last error: {last_error}")
 
 
+class GeminiQuotaExceededError(Exception):
+    """Raised when Gemini API responds with 429 RESOURCE_EXHAUSTED / quota limit reached."""
+    pass
+
+
 class GeminiLLMProvider(BaseLLMProvider):
-    def __init__(self, api_key: str, model: str = "gemini-3.6-flash"):
+    def __init__(self, api_key: str, model: Optional[str] = None):
         self.api_key = api_key
-        self.model = model
+        self.model = model or getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
 
     async def generate_text(
         self,
         prompt: str,
         system_instruction: Optional[str] = None,
-        response_mime_type: Optional[str] = None
+        response_mime_type: Optional[str] = None,
+        timeout: float = 90.0
     ) -> str:
-        import httpx
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
         
         gen_config: Dict[str, Any] = {
@@ -101,34 +111,106 @@ class GeminiLLMProvider(BaseLLMProvider):
                 "parts": [{"text": system_instruction}]
             }
         
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, json=payload)
-            
-            # If Gemini fails, raise a descriptive error
-            if resp.status_code != 200:
-                error_msg = f"Gemini API Failed with Status {resp.status_code}: {resp.text}"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
+        # Exponential backoff retry loop (5 attempts: 2s, 4s, 8s, 16s, 30s)
+        backoff_delays = [2.0, 4.0, 8.0, 16.0, 30.0]
+        max_attempts = len(backoff_delays)
+        last_error_details = None
+
+        client_timeout = httpx.Timeout(timeout=timeout, connect=30.0, read=timeout, write=30.0)
+
+        for attempt in range(max_attempts):
+            delay = backoff_delays[attempt]
+            try:
+                async with httpx.AsyncClient(timeout=client_timeout) as client:
+                    resp = await client.post(url, json=payload)
                 
-            data = resp.json()
-            candidates = data.get("candidates", [])
-            if not candidates:
-                feedback = data.get("promptFeedback", {})
-                block_reason = feedback.get("blockReason", "Unknown")
-                raise ValueError(f"Gemini API returned no candidates (Block reason: {block_reason}). Full response: {data}")
-            
-            first_candidate = candidates[0]
-            content = first_candidate.get("content", {})
-            parts = content.get("parts", [])
-            if not parts:
-                finish_reason = first_candidate.get("finishReason", "Unknown")
-                raise ValueError(f"Gemini API returned candidate with no parts (finishReason: {finish_reason}). Full response: {data}")
-            
-            text_parts = [p.get("text", "") for p in parts if isinstance(p, dict) and "text" in p]
-            text = "".join(text_parts).strip()
-            if not text:
-                raise ValueError(f"Gemini API returned empty text part. Full response: {data}")
-            return text
+                # Check specifically for hard Quota Exhaustion (RESOURCE_EXHAUSTED / daily model limit)
+                if resp.status_code == 429:
+                    resp_text = resp.text
+                    is_quota_exhausted = any(
+                        marker in resp_text
+                        for marker in [
+                            "RESOURCE_EXHAUSTED",
+                            "quotaId",
+                            "GenerateRequestsPerDay",
+                            "Quota exceeded",
+                            "exceeded your current quota",
+                            "rateLimitExceeded"
+                        ]
+                    )
+                    if is_quota_exhausted:
+                        logger.warning(
+                            f"[GeminiLLMProvider] Gemini API Free-Tier Quota Exhausted (429 RESOURCE_EXHAUSTED): {resp_text}. "
+                            f"Failing fast without retry."
+                        )
+                        raise GeminiQuotaExceededError(
+                            f"Gemini API quota exhausted (RESOURCE_EXHAUSTED): {resp_text}"
+                        )
+                    
+                # Check for transient / retryable status codes (transient 429, 503 Service Unavailable, 5xx)
+                if resp.status_code in (429, 500, 502, 503, 504):
+                    last_error_details = f"HTTP {resp.status_code} ({resp.reason_phrase}): {resp.text}"
+                    if attempt < max_attempts - 1:
+                        logger.warning(
+                            f"[GeminiLLMProvider] Gemini API returned HTTP {resp.status_code} ({resp.reason_phrase}). "
+                            f"Retrying with exponential backoff in {delay}s (Attempt {attempt + 1}/{max_attempts})..."
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        logger.error(
+                            f"[GeminiLLMProvider] Gemini API call failed after {max_attempts} attempts. "
+                            f"Final HTTP Status: {resp.status_code} ({resp.reason_phrase}). Response: {resp.text}"
+                        )
+                        raise ValueError(f"Gemini API returned HTTP {resp.status_code} ({resp.reason_phrase}) after {max_attempts} attempts: {resp.text}")
+                
+                # Non-200 non-retryable error (e.g. 400 Bad Request, 403 Forbidden)
+                if resp.status_code != 200:
+                    logger.error(
+                        f"[GeminiLLMProvider] Gemini API non-retryable error HTTP {resp.status_code} ({resp.reason_phrase}): {resp.text}"
+                    )
+                    raise ValueError(f"Gemini API Failed with Status {resp.status_code}: {resp.text}")
+                    
+                data = resp.json()
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    feedback = data.get("promptFeedback", {})
+                    block_reason = feedback.get("blockReason", "Unknown")
+                    raise ValueError(f"Gemini API returned no candidates (Block reason: {block_reason}). Full response: {data}")
+                
+                first_candidate = candidates[0]
+                content = first_candidate.get("content", {})
+                parts = content.get("parts", [])
+                if not parts:
+                    finish_reason = first_candidate.get("finishReason", "Unknown")
+                    raise ValueError(f"Gemini API returned candidate with no parts (finishReason: {finish_reason}). Full response: {data}")
+                
+                text_parts = [p.get("text", "") for p in parts if isinstance(p, dict) and "text" in p]
+                text = "".join(text_parts).strip()
+                if not text:
+                    raise ValueError(f"Gemini API returned empty text part. Full response: {data}")
+                return text
+
+            except (httpx.RequestError, OSError, ConnectionError, TimeoutError) as net_err:
+                err_type = type(net_err).__name__
+                err_msg = str(net_err) or "(no error message provided)"
+                last_error_details = f"{err_type}: {err_msg}"
+                if attempt < max_attempts - 1:
+                    logger.warning(
+                        f"[GeminiLLMProvider] Network/DNS/timeout error ({err_type}: {err_msg}). "
+                        f"Retrying in {delay}s (Attempt {attempt + 1}/{max_attempts})..."
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    logger.error(
+                        f"[GeminiLLMProvider] Gemini API network/DNS/timeout failure after {max_attempts} attempts. "
+                        f"Final Error Type: {err_type}, Message: {err_msg}"
+                    )
+                    raise ValueError(f"Gemini API connection/timeout error ({err_type}) after {max_attempts} attempts: {err_msg}")
+
+        raise ValueError(f"Gemini API call failed after {max_attempts} attempts: {last_error_details}")
+
 
 
 class MockLLMProvider(BaseLLMProvider):
@@ -136,7 +218,8 @@ class MockLLMProvider(BaseLLMProvider):
         self,
         prompt: str,
         system_instruction: Optional[str] = None,
-        response_mime_type: Optional[str] = None
+        response_mime_type: Optional[str] = None,
+        timeout: float = 90.0
     ) -> str:
         p_lower = prompt.lower()
         if "schema" in p_lower or "epics" in p_lower or "roadmap" in p_lower:
@@ -163,6 +246,7 @@ class MockLLMProvider(BaseLLMProvider):
                         "Lightweight local inference REST endpoints with error handling"
                     ],
                     "suggested_tech_stack": tech_stack,
+                    "stack_rationale": "Retained the student's core stack preference while supplementing with React (Vite) for the frontend interface, FastAPI for asynchronous model serving, and SQLite for lightweight scan history persistence.",
                     "project_summary": "Computer vision classification system for automated image diagnosis using deep learning CNN models and web-based reporting.",
                     "recommended_architecture": "FastAPI backend running PyTorch CNN inference + React Vite frontend with drag-and-drop image upload + SQLite for scan history.",
                     "epics": [
@@ -208,17 +292,27 @@ class MockLLMProvider(BaseLLMProvider):
                 }
                 return json.dumps(mock_roadmap)
 
-            # NLP / Text Matching / Semantic Intelligence
-            elif any(k in project_content for k in ["resume", "matcher", "nlp", "text", "embedding", "semantic", "sentiment", "spam", "summariz", "qa", "rag", "jd", "job", "language"]):
-                tech_stack = user_stack or ["React (Vite)", "FastAPI (Python)", "Sentence-Transformers (all-MiniLM-L6-v2)", "FAISS / ChromaDB (local)", "PyPDF2 / pdfplumber", "SQLite"]
+            # NLP / Text Matching / Semantic Intelligence / Knowledge Graphs / Speech
+            elif any(k in project_content for k in ["resume", "matcher", "nlp", "text", "embedding", "semantic", "sentiment", "spam", "summariz", "qa", "rag", "jd", "job", "language", "speech", "graph"]):
+                is_c_mismatch = user_stack and any(s.strip().lower() in ["c", "c++", "cpp", "assembly"] for s in user_stack)
+                if is_c_mismatch:
+                    tech_stack = ["Python (FastAPI)", "C (Native Audio DSP / CFFI)", "faster-whisper / PyTorch", "spaCy & NetworkX", "React (Vite)", "SQLite"]
+                    stack_rationale = (
+                        "⚠️ Architectural Advisory: Building speech NLP, LLM summarization, and knowledge graph generation in pure C introduces severe development bottlenecks, including manual string/memory management, lack of turnkey graph visualizers (like NetworkX), and high risk of semester timeline slippage. We strongly recommend the industry-standard stack (Python with FastAPI, spaCy/NetworkX, and faster-whisper). As a viable hybrid architecture, C is isolated for low-level audio DSP/FFT routines via CFFI, while Python orchestrates the NLP and graph generation pipeline."
+                    )
+                else:
+                    tech_stack = user_stack or ["React (Vite)", "FastAPI (Python)", "Sentence-Transformers (all-MiniLM-L6-v2)", "FAISS / ChromaDB (local)", "PyPDF2 / pdfplumber", "SQLite"]
+                    stack_rationale = "Built upon the user's foundation by incorporating Sentence-Transformers for semantic embeddings, FAISS/ChromaDB for local vector similarity retrieval, and React (Vite) for the dynamic skill gap visualizer."
+
                 mock_roadmap = {
                     "identified_requirements": [
-                        "Document text extraction and cleaning (PDF/DOCX/TXT)",
-                        "Semantic text embeddings for cosine similarity matching",
-                        "Fast local vector search or ranking engine",
-                        "Interactive student dashboard with match scores and skill gap highlights"
+                        "Document & speech text extraction and cleaning pipeline",
+                        "Semantic text embeddings & entity graph generation",
+                        "Fast local vector search and relationship ranking engine",
+                        "Interactive student dashboard with summary metrics and graph visualizer"
                     ],
                     "suggested_tech_stack": tech_stack,
+                    "stack_rationale": stack_rationale,
                     "project_summary": "Intelligent text processing & semantic matching platform leveraging pre-trained sentence transformer embeddings and local vector indexing.",
                     "recommended_architecture": "FastAPI async REST backend with Sentence-Transformers + React (Vite) UI + local FAISS vector indexing and SQLite metadata store.",
                     "epics": [
@@ -275,6 +369,7 @@ class MockLLMProvider(BaseLLMProvider):
                         "Interactive recommendation feed with rating feedback loop"
                     ],
                     "suggested_tech_stack": tech_stack,
+                    "stack_rationale": "Confirmed user technology preferences and paired them with FastAPI WebSockets for live feedback synchronization, Scikit-learn for matrix factorization recommendation, and PostgreSQL for relational preference logging.",
                     "project_summary": "Interactive recommendation and real-time interaction platform providing personalized item suggestions based on user preference history.",
                     "recommended_architecture": "FastAPI server with WebSocket handlers + React UI + SQLite/PostgreSQL interaction database + Scikit-learn recommendation matrix.",
                     "epics": [
@@ -331,6 +426,7 @@ class MockLLMProvider(BaseLLMProvider):
                         "Standard full-stack CRUD operations with zero unnecessary ML complexity"
                     ],
                     "suggested_tech_stack": tech_stack,
+                    "stack_rationale": "Preserved the user's core selections while completing the full stack with React (Vite) & Tailwind CSS for a modern responsive interface, SQLite/PostgreSQL for relational persistence, and Chart.js for visualization.",
                     "project_summary": "Full-stack web application with responsive dashboard, robust relational database storage, and real-time category visualization.",
                     "recommended_architecture": "FastAPI REST API server + React (Vite) & Tailwind CSS frontend + SQLite database + Chart.js data visualization.",
                     "epics": [
@@ -394,7 +490,10 @@ class MockLLMProvider(BaseLLMProvider):
 
 def get_llm_provider() -> BaseLLMProvider:
     if settings.LLM_PROVIDER == "gemini" and settings.GEMINI_API_KEY:
-        return GeminiLLMProvider(settings.GEMINI_API_KEY)
+        return GeminiLLMProvider(settings.GEMINI_API_KEY, model=getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash"))
     
+    if settings.LLM_PROVIDER == "mock":
+        return MockLLMProvider()
+
     # Crash loudly if the .env is missing the key
     raise ValueError("GEMINI_API_KEY is missing or LLM_PROVIDER is not set to 'gemini' in your .env file!")

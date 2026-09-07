@@ -29,7 +29,12 @@ class RoadmapGenerationOutput(BaseModel):
         ...,
         description="Curated, student-feasible technology stack tailored to the identified requirements (frontend, backend, database, and any necessary libraries/models)"
     )
+    stack_rationale: str = Field(
+        default="",
+        description="Concise 2-3 sentence explanation confirming user-chosen technologies and explaining how supplementary architectural layers complete the solution"
+    )
     project_summary: str = Field(..., description="Concise summary of the project architecture and workflow")
     recommended_architecture: str = Field(..., description="High-level architectural overview suitable for a student project")
     epics: List[PlannedEpic]
     tasks: List[PlannedTask]
+

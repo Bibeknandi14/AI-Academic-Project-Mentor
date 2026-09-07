@@ -1,6 +1,8 @@
 import uuid
 import logging
-from typing import Dict, Any, Optional
+import time
+import re
+from typing import Dict, Any, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -9,9 +11,14 @@ from app.models.task import Task
 from app.models.commit import CommitLog
 from app.models.chat import ChatMessage
 from app.schemas.mentorship import MentorshipQueryInput, ChatMessageResponse, InjectedContextSummary
-from app.services.llm_service import get_llm_provider
+from app.services.llm_service import get_llm_provider, GeminiQuotaExceededError
 
 logger = logging.getLogger(__name__)
+
+# Simple in-memory response cache for mentorship chat
+# Key: (project_id, task_id_or_none, normalized_question) -> Value: (ai_response_text, timestamp)
+_MENTORSHIP_QUERY_CACHE: Dict[Tuple[str, str, str], Tuple[str, float]] = {}
+_CACHE_TTL_SECONDS = 600.0  # 10 minutes cache window
 
 class MentorshipService:
     @classmethod
@@ -153,25 +160,56 @@ class MentorshipService:
         )
         db.add(user_msg)
 
-        # Step 6: Query LLM Provider with injected context
-        llm = get_llm_provider()
-        try:
-            ai_response_text = await llm.generate_text(
-                prompt=rag_prompt,
-                system_instruction=grounded_system_instruction
+        # Step 6: Query LLM Provider with Cache & Fast Quota Fallback
+        task_id_key = str(task_data["id"]) if task_data else "none"
+        normalized_q = re.sub(r"\s+", " ", query_input.question.strip().lower())
+        cache_key = (str(query_input.project_id), task_id_key, normalized_q)
+
+        cached_entry = _MENTORSHIP_QUERY_CACHE.get(cache_key)
+        now = time.time()
+        
+        if cached_entry and (now - cached_entry[1]) < _CACHE_TTL_SECONDS:
+            logger.info(
+                f"[MentorshipService] Cache HIT for project {query_input.project_id}, task {task_id_key}. "
+                f"Returning cached answer (cached {int(now - cached_entry[1])}s ago)."
             )
-            if not ai_response_text or not isinstance(ai_response_text, str):
-                ai_response_text = "I have reviewed your active task details. Please let me know if you have specific code or architecture questions!"
-        except Exception as e:
-            logger.error(f"Mentorship query generation failed: {e}", exc_info=True)
-            ai_response_text = (
-                f"### AI Mentorship Guidance\n\n"
-                f"I encountered a temporary issue generating a tailored response ({str(e)}).\n\n"
-                f"**Recommended next steps:**\n"
-                f"1. Review the objectives and branch for your active task: `{task_data['title'] if task_data else 'General'}`.\n"
-                f"2. Check that your task description has enough context.\n"
-                f"3. Try submitting your question again."
-            )
+            ai_response_text = cached_entry[0]
+        else:
+            llm = get_llm_provider()
+            try:
+                ai_response_text = await llm.generate_text(
+                    prompt=rag_prompt,
+                    system_instruction=grounded_system_instruction
+                )
+                if not ai_response_text or not isinstance(ai_response_text, str):
+                    ai_response_text = "I have reviewed your active task details. Please let me know if you have specific code or architecture questions!"
+                
+                # Store successful response in cache
+                _MENTORSHIP_QUERY_CACHE[cache_key] = (ai_response_text, now)
+
+            except GeminiQuotaExceededError as q_err:
+                logger.warning(f"[MentorshipService] Free-tier quota exhausted: {q_err}")
+                task_name = task_data["title"] if task_data else "General Project Architecture"
+                task_branch = (task_data.get("branch") if task_data else "main") or "main"
+                ai_response_text = (
+                    "### 🎓 AI Academic Mentor Notice\n\n"
+                    "The AI mentor is currently at daily capacity on its free-tier allocation and is temporarily resting.\n\n"
+                    f"**Recommended next steps for your task (`{task_name}`):**\n"
+                    f"1. **Proceed with Implementation**: Work on the primary objectives for branch `{task_branch}`.\n"
+                    "2. **Consult Code References**: Check the existing implementation in your repository or relevant framework documentation.\n"
+                    "3. **Ask Again Shortly**: Mentorship quota refreshes periodically, or contact your project lead to enable higher tier capacity.\n\n"
+                    "*All project tasks, git commits, and sprint progress tracking continue functioning normally!*"
+                )
+            except Exception as e:
+                logger.error(f"Mentorship query generation failed: {e}", exc_info=True)
+                ai_response_text = (
+                    f"### AI Mentorship Guidance\n\n"
+                    f"I encountered a temporary issue generating a tailored response ({str(e)}).\n\n"
+                    f"**Recommended next steps:**\n"
+                    f"1. Review the objectives and branch for your active task: `{task_data['title'] if task_data else 'General'}`.\n"
+                    f"2. Check that your task description has enough context.\n"
+                    f"3. Try submitting your question again."
+                )
 
         # Step 7: Save AI answer to ChatMessage DB
         ai_msg = ChatMessage(
