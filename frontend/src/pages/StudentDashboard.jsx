@@ -347,7 +347,7 @@ const StudentDashboard = () => {
                       required
                       value={mentorCodeInput}
                       onChange={(e) => setMentorCodeInput(e.target.value.toUpperCase())}
-                      className="glass-input w-full font-mono tracking-widest uppercase text-sm"
+                      className="glass-input w-full px-4 font-mono tracking-widest uppercase text-sm"
                       placeholder="MNT-XXXXX"
                       maxLength={9}
                     />
@@ -403,7 +403,7 @@ const StudentDashboard = () => {
                   required
                   value={deleteReason}
                   onChange={(e) => setDeleteReason(e.target.value)}
-                  className="glass-input w-full h-24 text-sm resize-none"
+                  className="glass-input w-full px-4 h-24 text-sm resize-none"
                   placeholder="Explain why this project should be deleted..."
                 />
               </div>

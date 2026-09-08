@@ -3,7 +3,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.db.session import engine, Base
+from app.db.session import engine, Base, AsyncSessionLocal
+from sqlalchemy.future import select
+from app.models.user import User
 from app.api import auth, projects, tasks, planner, github, mentorship, mentor, chat, users, deletion_tickets, supervision
 
 import app.models.user
@@ -36,6 +38,26 @@ async def lifespan(app: FastAPI):
             await conn.exec_driver_sql("ALTER TABLE projects ADD COLUMN status VARCHAR NOT NULL DEFAULT 'active'")
         except Exception:
             pass
+
+    # Non-destructive backfill for legacy demo accounts
+    async with AsyncSessionLocal() as db:
+        try:
+            mentor_res = await db.execute(select(User).where(User.email == "mentor@univ.edu"))
+            demo_mentor = mentor_res.scalars().first()
+            if demo_mentor and not demo_mentor.mentor_code:
+                demo_mentor.mentor_code = "MNT-DEMO-01"
+                await db.commit()
+                await db.refresh(demo_mentor)
+
+            if demo_mentor:
+                student_res = await db.execute(select(User).where(User.email == "student@univ.edu"))
+                demo_student = student_res.scalars().first()
+                if demo_student and not demo_student.assigned_mentor_id:
+                    demo_student.assigned_mentor_id = demo_mentor.id
+                    await db.commit()
+        except Exception as e:
+            print(f"[STARTUP WARNING] Backfill legacy demo accounts skipped or encountered: {e}")
+
     yield
 
 app = FastAPI(

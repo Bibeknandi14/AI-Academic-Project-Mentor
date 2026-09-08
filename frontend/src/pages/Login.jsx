@@ -53,13 +53,13 @@ const Login = () => {
           <div>
             <label className="text-xs font-semibold text-slate-300">University Email</label>
             <div className="relative mt-1.5">
-              <Mail className="absolute left-3.5 top-3 h-4 w-4 text-slate-500" />
+              <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="glass-input w-full pl-10 text-sm"
+                className="glass-input w-full pl-11 pr-4 text-sm"
                 placeholder="student@univ.edu"
               />
             </div>
@@ -68,13 +68,13 @@ const Login = () => {
           <div>
             <label className="text-xs font-semibold text-slate-300">Password</label>
             <div className="relative mt-1.5">
-              <Lock className="absolute left-3.5 top-3 h-4 w-4 text-slate-500" />
+              <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
               <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="glass-input w-full pl-10 text-sm"
+                className="glass-input w-full pl-11 pr-4 text-sm"
                 placeholder="••••••••"
               />
             </div>

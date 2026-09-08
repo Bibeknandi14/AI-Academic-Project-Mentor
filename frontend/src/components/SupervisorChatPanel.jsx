@@ -184,7 +184,7 @@ const SupervisorChatPanel = ({ projectId, mentorId }) => {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={`Message your ${user?.role === 'MENTOR' ? 'student' : 'faculty mentor'}...`}
-          className="glass-input flex-1 text-sm"
+          className="glass-input flex-1 px-4 text-sm"
           disabled={sending}
         />
         <button

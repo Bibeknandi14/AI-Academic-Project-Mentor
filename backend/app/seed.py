@@ -28,7 +28,8 @@ async def seed():
             hashed_password=get_password_hash("student123"),
             full_name="Alex Student",
             role=UserRole.STUDENT,
-            github_username="alex-student"
+            github_username="alex-student",
+            assigned_mentor_id="user-mentor-1"
         )
         mentor = User(
             id="user-mentor-1",
@@ -36,7 +37,8 @@ async def seed():
             hashed_password=get_password_hash("mentor123"),
             full_name="Dr. Sarah Mentor",
             role=UserRole.MENTOR,
-            github_username="sarah-mentor"
+            github_username="sarah-mentor",
+            mentor_code="MNT-DEMO-01"
         )
         db.add_all([student, mentor])
 

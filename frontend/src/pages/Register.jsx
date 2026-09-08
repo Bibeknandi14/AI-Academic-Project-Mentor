@@ -70,14 +70,14 @@ const Register = () => {
           <div>
             <label className="text-xs font-semibold text-slate-300">Full Name</label>
             <div className="relative mt-1">
-              <User className="absolute left-3.5 top-3 h-4 w-4 text-slate-500" />
+              <User className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
               <input
                 id="reg-full-name"
                 type="text"
                 required
                 value={formData.full_name}
                 onChange={handleChange('full_name')}
-                className="glass-input w-full pl-10 text-sm"
+                className="glass-input w-full pl-11 pr-4 text-sm"
                 placeholder="Alex Student"
               />
             </div>
@@ -87,14 +87,14 @@ const Register = () => {
           <div>
             <label className="text-xs font-semibold text-slate-300">University Email</label>
             <div className="relative mt-1">
-              <Mail className="absolute left-3.5 top-3 h-4 w-4 text-slate-500" />
+              <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
               <input
                 id="reg-email"
                 type="email"
                 required
                 value={formData.email}
                 onChange={handleChange('email')}
-                className="glass-input w-full pl-10 text-sm"
+                className="glass-input w-full pl-11 pr-4 text-sm"
                 placeholder="alex@univ.edu"
               />
             </div>
@@ -104,14 +104,14 @@ const Register = () => {
           <div>
             <label className="text-xs font-semibold text-slate-300">Password</label>
             <div className="relative mt-1">
-              <Lock className="absolute left-3.5 top-3 h-4 w-4 text-slate-500" />
+              <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
               <input
                 id="reg-password"
                 type="password"
                 required
                 value={formData.password}
                 onChange={handleChange('password')}
-                className="glass-input w-full pl-10 text-sm"
+                className="glass-input w-full pl-11 pr-4 text-sm"
                 placeholder="••••••••"
               />
             </div>
@@ -125,7 +125,7 @@ const Register = () => {
                 id="reg-role"
                 value={formData.role}
                 onChange={handleChange('role')}
-                className="glass-input w-full mt-1 text-sm"
+                className="glass-input w-full px-4 mt-1 text-sm"
               >
                 <option value="STUDENT">Student Team</option>
                 <option value="MENTOR">Faculty Mentor</option>
@@ -135,13 +135,13 @@ const Register = () => {
             <div>
               <label className="text-xs font-semibold text-slate-300">GitHub Username</label>
               <div className="relative mt-1">
-                <Github className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+                <Github className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                 <input
                   id="reg-github"
                   type="text"
                   value={formData.github_username}
                   onChange={handleChange('github_username')}
-                  className="glass-input w-full pl-9 text-sm font-mono"
+                  className="glass-input w-full pl-11 pr-4 text-sm font-mono"
                   placeholder="alex-dev"
                 />
               </div>
@@ -167,7 +167,7 @@ const Register = () => {
                       mentor_code: e.target.value.toUpperCase(),
                     }))
                   }
-                  className="glass-input w-full text-sm font-mono tracking-widest uppercase"
+                  className="glass-input w-full px-4 text-sm font-mono tracking-widest uppercase"
                   placeholder="MNT-XXXXX"
                   maxLength={9}
                 />

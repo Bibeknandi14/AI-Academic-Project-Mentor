@@ -534,7 +534,7 @@ const MentorDashboard = () => {
             <textarea
               value={rejectNote}
               onChange={(e) => setRejectNote(e.target.value)}
-              className="glass-input w-full h-24 text-sm resize-none"
+              className="glass-input w-full px-4 h-24 text-sm resize-none"
               placeholder="e.g. Project is still referenced in upcoming assessments..."
             />
             <div className="flex justify-end gap-3">
@@ -714,7 +714,7 @@ const MentorDashboard = () => {
                   value={detailSupervisionMsg}
                   onChange={(e) => setDetailSupervisionMsg(e.target.value)}
                   placeholder={`Write feedback or instruction for ${selectedStudentDetail.student.full_name}...`}
-                  className="glass-input flex-1 text-xs"
+                  className="glass-input flex-1 px-3 text-xs"
                 />
                 <button
                   type="submit"

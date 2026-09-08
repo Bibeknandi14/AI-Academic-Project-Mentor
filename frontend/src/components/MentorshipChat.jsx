@@ -241,7 +241,7 @@ const MentorshipChat = ({ projectId, activeTask }) => {
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           placeholder="Ask a technical or debug question regarding your active task..."
-          className="glass-input flex-1 text-sm"
+          className="glass-input flex-1 px-4 text-sm"
         />
         <button
           type="submit"
