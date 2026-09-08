@@ -19,9 +19,9 @@ class DeletionTicketCreate(DeletionTicketBase):
     pass
 
 
-class DeletionTicketUpdate(BaseModel):
-    """Used by a mentor to approve or reject a pending ticket."""
-    status: TicketStatus
+class RejectionBody(BaseModel):
+    """Body for the reject endpoint — lets the mentor supply a reason."""
+    rejection_note: str
 
 
 class DeletionTicketResponse(DeletionTicketBase):
@@ -29,6 +29,7 @@ class DeletionTicketResponse(DeletionTicketBase):
     student_id: str
     mentor_id: str
     status: TicketStatus
+    rejection_note: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

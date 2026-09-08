@@ -8,10 +8,15 @@ const GitHubCommitFeed = ({ projectId, githubRepo }) => {
   const [syncResult, setSyncResult] = useState(null);
 
   useEffect(() => {
-    fetchCommits();
+    if (projectId) {
+      fetchCommits();
+    } else {
+      setCommits([]);
+    }
   }, [projectId]);
 
   const fetchCommits = async () => {
+    if (!projectId) return;
     try {
       const res = await api.get(`/github/commits/${projectId}`);
       setCommits(res.data);
@@ -21,6 +26,7 @@ const GitHubCommitFeed = ({ projectId, githubRepo }) => {
   };
 
   const handleSync = async () => {
+    if (!projectId) return;
     setSyncing(true);
     setSyncResult(null);
     try {
@@ -49,8 +55,8 @@ const GitHubCommitFeed = ({ projectId, githubRepo }) => {
 
         <button
           onClick={handleSync}
-          disabled={syncing}
-          className="glass-button-primary flex items-center gap-2 text-sm"
+          disabled={syncing || !projectId}
+          className="glass-button-primary flex items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
           {syncing ? 'Syncing GitHub...' : 'Sync Commits'}
@@ -70,7 +76,9 @@ const GitHubCommitFeed = ({ projectId, githubRepo }) => {
 
         {commits.length === 0 ? (
           <div className="text-center py-12 text-slate-400 text-sm">
-            No commits recorded yet. Click "Sync Commits" above to ingest repository activity.
+            {!projectId
+              ? "No active project selected. Select or create an academic project to view GitHub commit activity."
+              : 'No commits recorded yet. Click "Sync Commits" above to ingest repository activity.'}
           </div>
         ) : (
           <div className="relative border-l border-slate-800 ml-4 space-y-6 pl-6 py-2">

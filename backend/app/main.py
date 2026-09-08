@@ -4,20 +4,38 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.db.session import engine, Base
-from app.api import auth, projects, tasks, planner, github, mentorship, mentor, chat
+from app.api import auth, projects, tasks, planner, github, mentorship, mentor, chat, users, deletion_tickets, supervision
 
-# Import new models so SQLAlchemy registers their tables with Base.metadata
-# before create_all runs on startup.  Order matters only for FK resolution.
-import app.models.user          # noqa: F401 – registers users table
-import app.models.project       # noqa: F401 – registers projects / project_members tables
-import app.models.deletion_ticket    # noqa: F401 – registers deletion_tickets table
-import app.models.supervisor_message # noqa: F401 – registers supervisor_messages table
+import app.models.user
+import app.models.project
+import app.models.task
+import app.models.commit
+import app.models.chat
+import app.models.deletion_ticket
+import app.models.supervisor_message
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize DB tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Safe SQLite migrations for any columns added in new iterations
+        try:
+            await conn.exec_driver_sql("ALTER TABLE deletion_tickets ADD COLUMN rejection_note TEXT")
+        except Exception:
+            pass  # Already exists
+        try:
+            await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN mentor_code VARCHAR")
+        except Exception:
+            pass
+        try:
+            await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN assigned_mentor_id VARCHAR")
+        except Exception:
+            pass
+        try:
+            await conn.exec_driver_sql("ALTER TABLE projects ADD COLUMN status VARCHAR NOT NULL DEFAULT 'active'")
+        except Exception:
+            pass
     yield
 
 app = FastAPI(
@@ -44,6 +62,9 @@ app.include_router(github.router, prefix=settings.API_V1_STR)
 app.include_router(mentorship.router, prefix=settings.API_V1_STR)
 app.include_router(mentor.router, prefix=settings.API_V1_STR)
 app.include_router(chat.router, prefix=settings.API_V1_STR)
+app.include_router(users.router, prefix=settings.API_V1_STR)
+app.include_router(deletion_tickets.router, prefix=settings.API_V1_STR)
+app.include_router(supervision.router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 async def root():

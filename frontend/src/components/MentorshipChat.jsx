@@ -12,7 +12,11 @@ const MentorshipChat = ({ projectId, activeTask }) => {
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    fetchHistory();
+    if (projectId) {
+      fetchHistory();
+    } else {
+      setMessages([]);
+    }
   }, [projectId]);
 
   useEffect(() => {
@@ -20,6 +24,7 @@ const MentorshipChat = ({ projectId, activeTask }) => {
   }, [messages, loading, error]);
 
   const fetchHistory = async () => {
+    if (!projectId) return;
     try {
       const res = await api.get(`/mentorship/history/${projectId}`);
       setMessages(res.data);
@@ -30,6 +35,11 @@ const MentorshipChat = ({ projectId, activeTask }) => {
 
   const sendMessage = async (textToSend) => {
     if (!textToSend.trim() || loading) return;
+
+    if (!projectId) {
+      setError("Please select or create an academic project to chat with the AI Mentor.");
+      return;
+    }
 
     const userText = textToSend.trim();
     setQuestion('');

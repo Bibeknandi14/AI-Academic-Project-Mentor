@@ -13,13 +13,40 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
+    # Duplicate email check
     result = await db.execute(select(User).where(User.email == user_in.email))
-    existing_user = result.scalars().first()
-    if existing_user:
+    if result.scalars().first():
         raise HTTPException(status_code=400, detail="Email is already registered")
 
-    # Auto-generate a unique mentor code for MENTOR accounts only.
-    mentor_code = generate_mentor_code() if user_in.role == UserRole.MENTOR else None
+    mentor_code = None
+    assigned_mentor_id = None
+
+    if user_in.role == UserRole.MENTOR:
+        # Generate a collision-resistant mentor code; retry up to 10 times on collision.
+        for _ in range(10):
+            candidate = generate_mentor_code()
+            taken = await db.execute(select(User).where(User.mentor_code == candidate))
+            if not taken.scalars().first():
+                mentor_code = candidate
+                break
+        if mentor_code is None:
+            raise HTTPException(status_code=500, detail="Could not generate a unique mentor code. Please try again.")
+
+    elif user_in.role == UserRole.STUDENT and user_in.mentor_code:
+        # Validate the supplied mentor code and resolve → mentor's user id.
+        mentor_result = await db.execute(
+            select(User).where(
+                User.mentor_code == user_in.mentor_code.strip().upper(),
+                User.role == UserRole.MENTOR,
+            )
+        )
+        mentor = mentor_result.scalars().first()
+        if not mentor:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Mentor code '{user_in.mentor_code}' is invalid or does not belong to any mentor."
+            )
+        assigned_mentor_id = mentor.id
 
     user = User(
         id=str(uuid.uuid4()),
@@ -29,7 +56,7 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
         role=user_in.role,
         github_username=user_in.github_username,
         mentor_code=mentor_code,
-        assigned_mentor_id=user_in.assigned_mentor_id if user_in.role == UserRole.STUDENT else None,
+        assigned_mentor_id=assigned_mentor_id,
     )
     db.add(user)
     await db.commit()

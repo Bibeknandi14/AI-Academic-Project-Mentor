@@ -49,6 +49,29 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
+  /** Merge partial fields into the stored user without a full re-fetch. */
+  const updateUser = (partial) => {
+    setUser((prev) => {
+      const next = { ...prev, ...partial };
+      localStorage.setItem('user', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  /** Link the current student to a mentor by code; refreshes stored user. */
+  const linkMentor = async (mentorCode) => {
+    const res = await api.patch('/users/me/mentor', { mentor_code: mentorCode });
+    updateUser(res.data);
+    return res.data;
+  };
+
+  /** Remove the current student's mentor assignment; refreshes stored user. */
+  const unlinkMentor = async () => {
+    const res = await api.delete('/users/me/mentor');
+    updateUser(res.data);
+    return res.data;
+  };
+
   const logout = () => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('user');
@@ -56,7 +79,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser, linkMentor, unlinkMentor }}>
       {children}
     </AuthContext.Provider>
   );

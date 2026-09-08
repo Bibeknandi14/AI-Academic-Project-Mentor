@@ -27,6 +27,9 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    # Optional: students may supply their mentor's code at registration time.
+    # Resolved server-side → assigned_mentor_id. Not stored directly.
+    mentor_code: Optional[str] = None
 
 
 class UserUpdate(BaseModel):

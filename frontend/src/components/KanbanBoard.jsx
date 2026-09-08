@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, GitBranch, Bot, CheckCircle2, Clock, AlertCircle, PlayCircle } from 'lucide-react';
+import { Plus, GitBranch, Bot, CheckCircle2, Clock, AlertCircle, PlayCircle, AlertTriangle } from 'lucide-react';
 import api from '../services/api';
 
 const columns = [
@@ -9,7 +9,8 @@ const columns = [
   { id: 'DONE', title: 'Completed', icon: CheckCircle2, color: 'border-emerald-500/40 bg-emerald-950/20 text-emerald-300' },
 ];
 
-const KanbanBoard = ({ tasks, projectId, onTaskUpdate, onOpenChatForTask }) => {
+const KanbanBoard = ({ tasks, projectId, onTaskUpdate, onOpenChatForTask, projectStatus }) => {
+  const isPendingDeletion = projectStatus === 'pending_deletion';
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newTask, setNewTask] = useState({
     title: '',
@@ -50,6 +51,20 @@ const KanbanBoard = ({ tasks, projectId, onTaskUpdate, onOpenChatForTask }) => {
 
   return (
     <div className="space-y-6">
+
+      {/* Pending deletion warning banner */}
+      {isPendingDeletion && (
+        <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-950/40 border border-amber-700/50 text-amber-300">
+          <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5 text-amber-400" />
+          <div>
+            <p className="text-sm font-bold">Deletion Pending Mentor Approval</p>
+            <p className="text-xs text-amber-400/80 mt-0.5">
+              Your deletion request is awaiting your mentor's review. The project is read-only until a decision is made.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white">Interactive Agile Kanban</h2>
@@ -57,7 +72,8 @@ const KanbanBoard = ({ tasks, projectId, onTaskUpdate, onOpenChatForTask }) => {
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="glass-button-primary flex items-center gap-2 text-sm"
+          disabled={isPendingDeletion}
+          className="glass-button-primary flex items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Plus className="h-4 w-4" /> Add Task
         </button>
