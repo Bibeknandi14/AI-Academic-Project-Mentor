@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, FolderKanban, GitCommit, Bot, Users, KeyRound, MessageSquare, Trash2 } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, GitCommit, Bot, Users, KeyRound, MessageSquare, Trash2, History } from 'lucide-react';
 
 const Sidebar = ({ activeTab, setActiveTab, userRole }) => {
   const studentNav = [
@@ -17,7 +17,9 @@ const Sidebar = ({ activeTab, setActiveTab, userRole }) => {
     { id: 'commits', label: 'Commit Activity Feed', icon: GitCommit },
     { id: 'supervision-chat', label: 'Supervision Chat', icon: MessageSquare },
     { id: 'mentorship', label: 'AI Assistance Logs', icon: Bot },
+    { id: 'activity-log', label: 'Activity Log', icon: History },
   ];
+
 
   const navItems = userRole === 'MENTOR' ? mentorNav : studentNav;
 

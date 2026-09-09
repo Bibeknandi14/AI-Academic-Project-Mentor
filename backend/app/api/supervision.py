@@ -18,8 +18,11 @@ from app.models.project import Project, ProjectMember
 from app.models.task import Task, TaskStatus
 from app.models.commit import CommitLog
 from app.models.supervisor_message import SupervisorMessage
+from app.models.mentor_activity_log import MentorActivityLog
+from app.models.notification import Notification
 from app.schemas.supervision import StudentSummary, ProjectSummary
 from app.schemas.supervisor_message import SupervisorMessageCreate, SupervisorMessageResponse
+from app.schemas.mentor_activity_log import MentorActivityLogResponse
 
 router = APIRouter(prefix="/supervision", tags=["Supervision"])
 
@@ -147,6 +150,25 @@ async def mark_project_complete(
     """Mark a supervised project as completed. Only the project's assigned mentor can do this."""
     proj = await _assert_mentor_owns_project(project_id, mentor, db)
     proj.status = "completed"
+
+    # Find the student owner for the activity log
+    owner_res = await db.execute(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.role == "OWNER",
+        )
+    )
+    owner_member = owner_res.scalars().first()
+
+    db.add(MentorActivityLog(
+        id=str(uuid.uuid4()),
+        mentor_id=mentor.id,
+        action_type="marked_completed",
+        student_id=owner_member.user_id if owner_member else None,
+        project_id=project_id,
+        detail=f"Marked project '{proj.title}' as completed",
+    ))
+
     await db.commit()
     await db.refresh(proj)
     return await _project_summary(proj, db)
@@ -187,6 +209,15 @@ async def unassign_student(
     for proj in proj_result.scalars().all():
         if proj.mentor_id == mentor.id:
             proj.mentor_id = None
+
+    db.add(MentorActivityLog(
+        id=str(uuid.uuid4()),
+        mentor_id=mentor.id,
+        action_type="unassigned_student",
+        student_id=student_id,
+        project_id=None,
+        detail=f"Unassigned student '{student.full_name}' ({student.email})",
+    ))
 
     await db.commit()
     return {"detail": f"Student '{student.full_name}' has been unassigned."}
@@ -320,6 +351,36 @@ async def send_supervision_message(
         message=body.message,
     )
     db.add(msg)
+
+    # Notify the recipient of the new supervision message
+    db.add(Notification(
+        id=str(uuid.uuid4()),
+        user_id=receiver_id,
+        type="supervision_message",
+        message=f"New supervision message from {current_user.full_name}: \"{body.message[:80]}{'...' if len(body.message) > 80 else ''}\"",
+        related_project_id=project_id,
+        is_read=False,
+    ))
+
     await db.commit()
     await db.refresh(msg)
     return msg
+
+
+# ─── activity log ─────────────────────────────────────────────────────────────
+
+@router.get("/activity-log", response_model=List[MentorActivityLogResponse])
+async def get_activity_log(
+    db: AsyncSession = Depends(get_db),
+    mentor: User = Depends(get_current_mentor),
+):
+    """
+    Returns the authenticated mentor's full activity history across ALL their students,
+    sorted newest-first. Filtered strictly to mentor_id == current_user.id.
+    """
+    result = await db.execute(
+        select(MentorActivityLog)
+        .where(MentorActivityLog.mentor_id == mentor.id)
+        .order_by(MentorActivityLog.created_at.desc())
+    )
+    return result.scalars().all()

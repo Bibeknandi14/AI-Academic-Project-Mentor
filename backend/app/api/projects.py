@@ -12,6 +12,7 @@ from app.models.project import Project, ProjectMember
 from app.models.task import Task, TaskStatus
 from app.models.commit import CommitLog
 from app.models.deletion_ticket import DeletionTicket
+from app.models.notification import Notification
 from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
 from app.schemas.deletion_ticket import DeletionTicketCreate, DeletionTicketResponse
 
@@ -261,6 +262,17 @@ async def request_deletion(
     )
     db.add(ticket)
     proj.status = "pending_deletion"
+
+    # Notify the mentor about the new deletion request
+    db.add(Notification(
+        id=str(uuid.uuid4()),
+        user_id=proj.mentor_id,
+        type="deletion_request",
+        message=f"{current_user.full_name} has requested deletion of '{proj.title}'. Please review under Deletion Requests.",
+        related_project_id=project_id,
+        is_read=False,
+    ))
+
     await db.commit()
     await db.refresh(ticket)
     return ticket

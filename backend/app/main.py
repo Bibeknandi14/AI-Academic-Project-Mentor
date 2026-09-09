@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.db.session import engine, Base, AsyncSessionLocal
 from sqlalchemy.future import select
 from app.models.user import User
-from app.api import auth, projects, tasks, planner, github, mentorship, mentor, chat, users, deletion_tickets, supervision
+from app.api import auth, projects, tasks, planner, github, mentorship, mentor, chat, users, deletion_tickets, supervision, notifications
 
 import app.models.user
 import app.models.project
@@ -15,6 +15,8 @@ import app.models.commit
 import app.models.chat
 import app.models.deletion_ticket
 import app.models.supervisor_message
+import app.models.mentor_activity_log
+import app.models.notification
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -87,6 +89,7 @@ app.include_router(chat.router, prefix=settings.API_V1_STR)
 app.include_router(users.router, prefix=settings.API_V1_STR)
 app.include_router(deletion_tickets.router, prefix=settings.API_V1_STR)
 app.include_router(supervision.router, prefix=settings.API_V1_STR)
+app.include_router(notifications.router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 async def root():

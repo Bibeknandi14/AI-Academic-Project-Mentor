@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import {
   Sparkles, Folder, AlertTriangle, CheckCircle2,
-  Trash2, KeyRound, UserCheck, UserX, Loader2, MessageSquare
+  Trash2, KeyRound, UserCheck, UserX, Loader2, MessageSquare, X
 } from 'lucide-react';
 
 const StudentDashboard = () => {
@@ -33,14 +33,21 @@ const StudentDashboard = () => {
   const [deleteReason, setDeleteReason] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [deleteSuccess, setDeleteSuccess] = useState('');
   const [rejectedTickets, setRejectedTickets] = useState([]);
+  const [pendingTicketId, setPendingTicketId] = useState(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   useEffect(() => { fetchProjects(); }, []);
 
   useEffect(() => {
     if (selectedProject) {
       fetchTasks(selectedProject.id);
-      fetchRejectedTickets(selectedProject.id);
+      if (selectedProject.status === 'pending_deletion') {
+        fetchPendingTicket(selectedProject.id);
+      } else {
+        setPendingTicketId(null);
+      }
     }
   }, [selectedProject]);
 
@@ -59,15 +66,14 @@ const StudentDashboard = () => {
     } catch (err) { console.error('Failed to load tasks', err); }
   };
 
-  // Fetch any rejected deletion tickets for this project so student sees the note
-  const fetchRejectedTickets = async (projectId) => {
-    // Reuse the project status — if not pending_deletion, no need to query
+  // Fetch the pending ticket id for this project (for cancel button)
+  const fetchPendingTicket = async (projectId) => {
     try {
-      const res = await api.get(`/projects/${projectId}`);
-      // We don't have a student-facing ticket endpoint yet; embed from project status
-      // For now we just show a note if status changed back to active after being pending
-      setRejectedTickets([]);
-    } catch (_) {}
+      const res = await api.get(`/deletion-tickets/mine/${projectId}`);
+      setPendingTicketId(res.data?.id || null);
+    } catch (_) {
+      setPendingTicketId(null);
+    }
   };
 
   const handleTaskUpdate = (updatedTask) => {
@@ -118,17 +124,35 @@ const StudentDashboard = () => {
     e.preventDefault();
     setDeleteError(''); setDeleteLoading(true);
     try {
-      await api.post(`/projects/${selectedProject.id}/request-deletion`, {
+      const res = await api.post(`/projects/${selectedProject.id}/request-deletion`, {
         project_id: selectedProject.id,
         reason: deleteReason,
       });
+      setPendingTicketId(res.data?.id || null);
       setShowDeleteModal(false);
       setDeleteReason('');
-      // Refresh project list so status reflects pending_deletion
+      setDeleteSuccess('Deletion request sent to your mentor for approval.');
+      setTimeout(() => setDeleteSuccess(''), 5000);
       await fetchProjects();
     } catch (err) {
       setDeleteError(err.response?.data?.detail || 'Failed to submit deletion request.');
     } finally { setDeleteLoading(false); }
+  };
+
+  // ── Cancel deletion ticket handler ────────────────────────────────────────
+  const handleCancelDeletion = async () => {
+    if (!pendingTicketId) return;
+    if (!window.confirm('Cancel your deletion request? The project will return to active status.')) return;
+    setCancelLoading(true);
+    try {
+      await api.delete(`/deletion-tickets/${pendingTicketId}/cancel`);
+      setPendingTicketId(null);
+      setDeleteSuccess('Deletion request cancelled. Project is active again.');
+      setTimeout(() => setDeleteSuccess(''), 5000);
+      await fetchProjects();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to cancel deletion request.');
+    } finally { setCancelLoading(false); }
   };
 
   const handleTabChange = (tabId) => {
@@ -141,7 +165,7 @@ const StudentDashboard = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      <Navbar onOpenPlanner={() => setShowPlanner(true)} />
+      <Navbar onOpenPlanner={() => setShowPlanner(true)} onNavigate={handleTabChange} />
 
       <div className="flex flex-1">
         <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} userRole="STUDENT" />
@@ -230,6 +254,39 @@ const StudentDashboard = () => {
               </div>
             )}
           </div>
+
+          {/* Success/cancel toast */}
+          {deleteSuccess && (
+            <div className="glass-card flex items-center justify-between gap-3 px-4 py-3 border-emerald-800/50 bg-emerald-950/30 text-emerald-300 text-sm">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                {deleteSuccess}
+              </div>
+              <button onClick={() => setDeleteSuccess('')} className="text-emerald-500 hover:text-emerald-300 transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Pending deletion cancel banner */}
+          {isPendingDeletion && (
+            <div className="glass-card flex items-center justify-between gap-3 px-4 py-3 border-amber-800/40 bg-amber-950/20">
+              <div className="flex items-center gap-2 text-amber-300 text-sm">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                Deletion request is pending mentor approval.
+              </div>
+              {pendingTicketId && (
+                <button
+                  onClick={handleCancelDeletion}
+                  disabled={cancelLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all disabled:opacity-50"
+                >
+                  {cancelLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                  Cancel Request
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Tab content — conditionally rendered by activeTab */}
           {activeTab === 'kanban' && (

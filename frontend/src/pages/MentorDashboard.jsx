@@ -9,7 +9,7 @@ import api from '../services/api';
 import {
   LayoutDashboard, AlertTriangle, CheckCircle2, GitCommit,
   ArrowRight, Shield, KeyRound, Copy, Check, Users, Trash2,
-  Loader2, MessageSquare, UserX, X, Send, ExternalLink, Clock, PlayCircle, Folder
+  Loader2, MessageSquare, UserX, X, Send, ExternalLink, Clock, PlayCircle, Folder, History
 } from 'lucide-react';
 
 const MentorDashboard = () => {
@@ -34,6 +34,10 @@ const MentorDashboard = () => {
   // Supervision chat tab — project selector
   const [supervisionProject, setSupervisionProject] = useState(null);
 
+  // Activity log
+  const [activityLog, setActivityLog] = useState([]);
+  const [activityLogLoading, setActivityLogLoading] = useState(false);
+
   // Student project drill-down detail modal state
   const [selectedStudentDetail, setSelectedStudentDetail] = useState(null); // { student, project }
   const [detailTasks, setDetailTasks] = useState([]);
@@ -49,7 +53,17 @@ const MentorDashboard = () => {
   useEffect(() => {
     if (activeTab === 'students') fetchStudents();
     if (activeTab === 'pending-deletions') fetchTickets();
+    if (activeTab === 'activity-log') fetchActivityLog();
   }, [activeTab]);
+
+  const fetchActivityLog = async () => {
+    setActivityLogLoading(true);
+    try {
+      const res = await api.get('/supervision/activity-log');
+      setActivityLog(res.data);
+    } catch (err) { console.error('Failed to load activity log', err); }
+    finally { setActivityLogLoading(false); }
+  };
 
   const fetchMentorProjects = async () => {
     try {
@@ -169,7 +183,7 @@ const MentorDashboard = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      <Navbar onOpenPlanner={() => {}} />
+      <Navbar onOpenPlanner={() => {}} onNavigate={setActiveTab} />
 
       <div className="flex flex-1">
         <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} userRole="MENTOR" />
@@ -517,6 +531,59 @@ const MentorDashboard = () => {
               </div>
               {(selectedProject || projects[0]) && (
                 <MentorshipChat projectId={(selectedProject || projects[0]).id} activeTask={null} />
+              )}
+            </div>
+          )}
+
+          {/* ── Activity Log Tab ──────────────────────────────────────── */}
+          {activeTab === 'activity-log' && (
+            <div className="space-y-4">
+              <h3 className="text-base font-bold text-slate-200 flex items-center gap-2">
+                <History className="h-5 w-5 text-indigo-400" /> Activity Log
+              </h3>
+              <p className="text-xs text-slate-500">Unified history of all your actions across all students, newest first.</p>
+              {activityLogLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="h-6 w-6 text-indigo-400 animate-spin" />
+                </div>
+              ) : activityLog.length === 0 ? (
+                <div className="glass-card p-12 text-center space-y-3">
+                  <History className="h-10 w-10 text-slate-600 mx-auto" />
+                  <h4 className="text-base font-bold text-slate-300">No activity yet</h4>
+                  <p className="text-sm text-slate-500">Actions like approving deletions, marking projects complete, or unassigning students will appear here.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {activityLog.map((entry) => {
+                    const badges = {
+                      approved_deletion: { label: 'Approved Deletion', color: 'text-rose-300 bg-rose-950/60 border-rose-800/50' },
+                      rejected_deletion: { label: 'Rejected Deletion', color: 'text-amber-300 bg-amber-950/60 border-amber-800/50' },
+                      marked_completed: { label: 'Marked Completed', color: 'text-emerald-300 bg-emerald-950/60 border-emerald-800/50' },
+                      unassigned_student: { label: 'Unassigned Student', color: 'text-slate-300 bg-slate-800/60 border-slate-700/50' },
+                    };
+                    const badge = badges[entry.action_type] || { label: entry.action_type, color: 'text-indigo-300 bg-indigo-950/60 border-indigo-800/50' };
+                    return (
+                      <div key={entry.id} className="glass-card px-5 py-4 flex items-start gap-4">
+                        <div className="h-9 w-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+                          <History className="h-4 w-4 text-indigo-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${badge.color}`}>
+                              {badge.label}
+                            </span>
+                          </div>
+                          {entry.detail && (
+                            <p className="text-sm text-slate-300 mt-1.5 leading-snug">{entry.detail}</p>
+                          )}
+                          <p className="text-[11px] text-slate-500 mt-1.5">
+                            {new Date(entry.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           )}
