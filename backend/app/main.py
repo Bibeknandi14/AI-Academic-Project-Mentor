@@ -4,8 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.db.session import engine, Base, AsyncSessionLocal
+from sqlalchemy import func
 from sqlalchemy.future import select
-from app.models.user import User
+from app.models.user import User, UserRole
+from app.core.security import get_password_hash
 from app.api import auth, projects, tasks, planner, github, mentorship, mentor, chat, users, deletion_tickets, supervision, notifications
 
 import app.models.user
@@ -41,24 +43,49 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
-    # Non-destructive backfill for legacy demo accounts
+    # Ensure demo accounts exist and are linked
     async with AsyncSessionLocal() as db:
         try:
-            mentor_res = await db.execute(select(User).where(User.email == "mentor@univ.edu"))
+            mentor_res = await db.execute(select(User).where(func.lower(User.email) == "mentor@univ.edu"))
             demo_mentor = mentor_res.scalars().first()
-            if demo_mentor and not demo_mentor.mentor_code:
+            if not demo_mentor:
+                demo_mentor = User(
+                    id="user-mentor-1",
+                    email="mentor@univ.edu",
+                    hashed_password=get_password_hash("mentor123"),
+                    full_name="Dr. Sarah Mentor",
+                    role=UserRole.MENTOR,
+                    github_username="sarah-mentor",
+                    mentor_code="MNT-DEMO-01"
+                )
+                db.add(demo_mentor)
+                await db.commit()
+                await db.refresh(demo_mentor)
+            elif not demo_mentor.mentor_code:
                 demo_mentor.mentor_code = "MNT-DEMO-01"
                 await db.commit()
                 await db.refresh(demo_mentor)
 
-            if demo_mentor:
-                student_res = await db.execute(select(User).where(User.email == "student@univ.edu"))
-                demo_student = student_res.scalars().first()
-                if demo_student and not demo_student.assigned_mentor_id:
-                    demo_student.assigned_mentor_id = demo_mentor.id
-                    await db.commit()
+            student_res = await db.execute(select(User).where(func.lower(User.email) == "student@univ.edu"))
+            demo_student = student_res.scalars().first()
+            if not demo_student:
+                demo_student = User(
+                    id="user-student-1",
+                    email="student@univ.edu",
+                    hashed_password=get_password_hash("student123"),
+                    full_name="Alex Student",
+                    role=UserRole.STUDENT,
+                    github_username="alex-student",
+                    assigned_mentor_id=demo_mentor.id
+                )
+                db.add(demo_student)
+                await db.commit()
+                await db.refresh(demo_student)
+            elif not demo_student.assigned_mentor_id:
+                demo_student.assigned_mentor_id = demo_mentor.id
+                await db.commit()
         except Exception as e:
-            print(f"[STARTUP WARNING] Backfill legacy demo accounts skipped or encountered: {e}")
+            print(f"[STARTUP WARNING] Demo accounts setup encountered: {e}")
 
     yield
 

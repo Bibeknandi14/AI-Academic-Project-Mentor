@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Sparkles, 
   CheckCircle2, 
@@ -306,7 +307,7 @@ const AIPlannerModal = ({ onClose, onProjectCreated }) => {
     }
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-start justify-center p-3 sm:p-6 overflow-y-auto">
       <div className="glass-card max-w-3xl w-full my-4 sm:my-8 flex flex-col max-h-[90vh] overflow-hidden border border-slate-800 shadow-2xl">
         
@@ -866,7 +867,8 @@ const AIPlannerModal = ({ onClose, onProjectCreated }) => {
         )}
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

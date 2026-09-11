@@ -16,7 +16,7 @@ const Login = () => {
     setError('');
     setLoading(true);
     try {
-      const userData = await login(email, password);
+      const userData = await login(email.trim(), password);
       if (userData.role === 'MENTOR') {
         navigate('/mentor-dashboard');
       } else {
@@ -28,6 +28,12 @@ const Login = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const autofillDemo = (demoEmail, demoPass) => {
+    setEmail(demoEmail);
+    setPassword(demoPass);
+    setError('');
   };
 
   return (
@@ -90,12 +96,31 @@ const Login = () => {
           </button>
         </form>
 
-        <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px] text-slate-400 space-y-1">
-          <div className="font-semibold text-indigo-300 flex items-center gap-1">
-            <ShieldCheck className="h-3.5 w-3.5" /> Quick Demo Credentials:
+        <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px] text-slate-400 space-y-2">
+          <div className="font-semibold text-indigo-300 flex items-center justify-between">
+            <span className="flex items-center gap-1">
+              <ShieldCheck className="h-3.5 w-3.5" /> Quick Demo Credentials:
+            </span>
+            <span className="text-[10px] text-slate-500">(Click to autofill)</span>
           </div>
-          <div>Student: <code className="text-slate-200">student@univ.edu</code> / <code className="text-slate-200">student123</code></div>
-          <div>Mentor: <code className="text-slate-200">mentor@univ.edu</code> / <code className="text-slate-200">mentor123</code></div>
+          <div className="flex flex-col gap-1.5">
+            <button
+              type="button"
+              onClick={() => autofillDemo('student@univ.edu', 'student123')}
+              className="text-left px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 hover:border-indigo-500/50 border border-slate-700/50 transition-colors flex items-center justify-between"
+            >
+              <span>🎓 Student: <code className="text-slate-200">student@univ.edu</code></span>
+              <span className="text-[10px] text-indigo-400">Autofill</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => autofillDemo('mentor@univ.edu', 'mentor123')}
+              className="text-left px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 hover:border-indigo-500/50 border border-slate-700/50 transition-colors flex items-center justify-between"
+            >
+              <span>🧑‍🏫 Mentor: <code className="text-slate-200">mentor@univ.edu</code></span>
+              <span className="text-[10px] text-indigo-400">Autofill</span>
+            </button>
+          </div>
         </div>
 
         <div className="text-center text-xs text-slate-400">

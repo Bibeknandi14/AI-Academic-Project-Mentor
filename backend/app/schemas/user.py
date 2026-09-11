@@ -32,6 +32,21 @@ class UserCreate(UserBase):
     mentor_code: Optional[str] = None
 
 
+class AssignedMentorInfo(BaseModel):
+    id: str
+    full_name: str
+    email: EmailStr
+    mentor_code: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class UserSelfUpdate(BaseModel):
+    """Fields allowed to be self-updated by the authenticated user via PATCH /api/auth/me."""
+    full_name: Optional[str] = None
+    github_username: Optional[str] = None
+
+
 class UserUpdate(BaseModel):
     """Partial update — used from dashboards (e.g. student linking to a mentor)."""
     full_name: Optional[str] = None
@@ -49,6 +64,8 @@ class UserResponse(UserBase):
     # Present only for MENTOR accounts; null for students.
     mentor_code: Optional[str] = None
     created_at: datetime
+    # Present for students if linked to a mentor
+    assigned_mentor: Optional[AssignedMentorInfo] = None
 
     model_config = {"from_attributes": True}
 
@@ -57,3 +74,4 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     user: UserResponse
+

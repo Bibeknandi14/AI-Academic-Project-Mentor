@@ -83,7 +83,7 @@ class GeminiQuotaExceededError(Exception):
 class GeminiLLMProvider(BaseLLMProvider):
     def __init__(self, api_key: str, model: Optional[str] = None):
         self.api_key = api_key
-        self.model = model or getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+        self.model = model or getattr(settings, "GEMINI_MODEL_NAME", "gemini-3.6-flash")
 
     async def generate_text(
         self,
@@ -490,7 +490,7 @@ class MockLLMProvider(BaseLLMProvider):
 
 def get_llm_provider() -> BaseLLMProvider:
     if settings.LLM_PROVIDER == "gemini" and settings.GEMINI_API_KEY:
-        return GeminiLLMProvider(settings.GEMINI_API_KEY, model=getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash"))
+        return GeminiLLMProvider(settings.GEMINI_API_KEY, model=getattr(settings, "GEMINI_MODEL_NAME", "gemini-3.6-flash"))
     
     if settings.LLM_PROVIDER == "mock":
         return MockLLMProvider()

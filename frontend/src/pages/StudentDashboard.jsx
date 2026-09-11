@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import KanbanBoard from '../components/KanbanBoard';
@@ -37,6 +38,7 @@ const StudentDashboard = () => {
   const [rejectedTickets, setRejectedTickets] = useState([]);
   const [pendingTicketId, setPendingTicketId] = useState(null);
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [directDeleteLoading, setDirectDeleteLoading] = useState(false);
 
   useEffect(() => { fetchProjects(); }, []);
 
@@ -54,6 +56,8 @@ const StudentDashboard = () => {
   const fetchProjects = async () => {
     try {
       const res = await api.get('/projects/');
+      // DEBUG: confirm snake_case fields (mentor_id, github_repo, is_at_risk) are present
+      if (res.data.length > 0) console.log('[DEBUG] sample project object:', res.data[0]);
       setProjects(res.data);
       if (res.data.length > 0 && !selectedProject) setSelectedProject(res.data[0]);
     } catch (err) { console.error('Failed to load projects', err); }
@@ -137,6 +141,22 @@ const StudentDashboard = () => {
     } catch (err) {
       setDeleteError(err.response?.data?.detail || 'Failed to submit deletion request.');
     } finally { setDeleteLoading(false); }
+  };
+
+  // ── Direct delete (independent student — no mentor) ────────────────────────
+  const handleDirectDelete = async () => {
+    if (!selectedProject) return;
+    if (!window.confirm(`Permanently delete "${selectedProject.title}"? This cannot be undone.`)) return;
+    setDirectDeleteLoading(true);
+    try {
+      await api.delete(`/projects/${selectedProject.id}`);
+      setDeleteSuccess(`Project "${selectedProject.title}" deleted.`);
+      setTimeout(() => setDeleteSuccess(''), 5000);
+      setSelectedProject(null);
+      await fetchProjects();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to delete project.');
+    } finally { setDirectDeleteLoading(false); }
   };
 
   // ── Cancel deletion ticket handler ────────────────────────────────────────
@@ -242,14 +262,29 @@ const StudentDashboard = () => {
                   </p>
                 </div>
 
-                {/* Request Deletion button — only when mentor assigned and not already pending */}
-                {hasMentor && !isPendingDeletion && selectedProject?.status !== 'completed' && (
-                  <button
-                    onClick={() => setShowDeleteModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-950/60 border border-rose-800/50 text-rose-300 hover:bg-rose-950 transition-all"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Request Deletion
-                  </button>
+                {/* Delete actions: direct delete (no mentor) OR request deletion (has mentor) */}
+                {selectedProject?.status !== 'completed' && !isPendingDeletion && (
+                  hasMentor ? (
+                    // Mentor-supervised: must go through ticket workflow
+                    <button
+                      onClick={() => setShowDeleteModal(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-950/60 border border-rose-800/50 text-rose-300 hover:bg-rose-950 transition-all"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Request Deletion
+                    </button>
+                  ) : (
+                    // Independent student: direct delete allowed
+                    <button
+                      onClick={handleDirectDelete}
+                      disabled={directDeleteLoading}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-950/60 border border-rose-800/50 text-rose-300 hover:bg-rose-950 transition-all disabled:opacity-50"
+                    >
+                      {directDeleteLoading
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Trash2 className="h-3.5 w-3.5" />}
+                      Delete Project
+                    </button>
+                  )
                 )}
               </div>
             )}
@@ -434,7 +469,7 @@ const StudentDashboard = () => {
       )}
 
       {/* Deletion request modal */}
-      {showDeleteModal && (
+      {showDeleteModal && createPortal(
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-card max-w-md w-full p-6 space-y-5">
             <div className="flex items-center gap-3">
@@ -483,7 +518,8 @@ const StudentDashboard = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

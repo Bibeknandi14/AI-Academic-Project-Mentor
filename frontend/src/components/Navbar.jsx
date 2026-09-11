@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Sparkles, LogOut, Shield, Bell, X, CheckCheck } from 'lucide-react';
+import { Sparkles, LogOut, Shield, Bell, X, CheckCheck, User } from 'lucide-react';
 import api from '../services/api';
+import ProfileModal from './ProfileModal';
 
 const TYPE_LABEL = {
   deletion_request: '🗑️ Deletion Request',
@@ -15,6 +16,7 @@ const Navbar = ({ onOpenPlanner, onNavigate }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
   const [open, setOpen] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const dropdownRef = useRef(null);
 
   // Poll unread count every 30 s
@@ -187,18 +189,26 @@ const Navbar = ({ onOpenPlanner, onNavigate }) => {
         </div>
 
         <div className="flex items-center gap-3 pl-4 border-l border-slate-800">
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-indigo-400 font-semibold text-sm">
+          <button
+            id="user-profile-button"
+            type="button"
+            onClick={() => setShowProfile(true)}
+            className="flex items-center gap-2.5 px-2 py-1.5 rounded-xl hover:bg-slate-800/80 transition-all text-left group cursor-pointer"
+            title="View & Edit Profile"
+          >
+            <div className="h-9 w-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-indigo-400 font-semibold text-sm group-hover:border-indigo-500/50 group-hover:scale-105 transition-all shadow-sm">
               {user?.full_name ? user.full_name.charAt(0).toUpperCase() : 'U'}
             </div>
             <div className="hidden md:block text-left">
-              <p className="text-sm font-medium text-slate-200 leading-none">{user?.full_name}</p>
+              <p className="text-sm font-medium text-slate-200 leading-none group-hover:text-indigo-300 transition-colors">
+                {user?.full_name}
+              </p>
               <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 mt-1">
                 <Shield className="h-3 w-3 text-indigo-400" />
                 {user?.role}
               </span>
             </div>
-          </div>
+          </button>
 
           <button
             onClick={logout}
@@ -209,6 +219,9 @@ const Navbar = ({ onOpenPlanner, onNavigate }) => {
           </button>
         </div>
       </div>
+
+      {/* Profile Modal */}
+      <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} />
     </header>
   );
 };

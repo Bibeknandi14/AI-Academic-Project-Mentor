@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import GitHubCommitFeed from '../components/GitHubCommitFeed';
@@ -591,7 +592,7 @@ const MentorDashboard = () => {
       </div>
 
       {/* Reject confirmation modal */}
-      {rejectModal && (
+      {rejectModal && createPortal(
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-card max-w-md w-full p-6 space-y-4">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -618,11 +619,12 @@ const MentorDashboard = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Student Project Detail Drill-Down Modal */}
-      {selectedStudentDetail && (
+      {selectedStudentDetail && createPortal(
         <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="glass-card max-w-3xl w-full max-h-[90vh] flex flex-col p-6 space-y-5 overflow-hidden shadow-2xl border-indigo-900/60">
             {/* Header */}
@@ -830,7 +832,8 @@ const MentorDashboard = () => {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

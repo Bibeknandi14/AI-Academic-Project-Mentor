@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, GitBranch, Bot, CheckCircle2, Clock, AlertCircle, PlayCircle, AlertTriangle } from 'lucide-react';
 import api from '../services/api';
 
@@ -161,7 +162,7 @@ const KanbanBoard = ({ tasks, projectId, onTaskUpdate, onOpenChatForTask, projec
       </div>
 
       {/* Modal to Create Task */}
-      {showCreateModal && (
+      {showCreateModal && createPortal(
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-card max-w-md w-full p-6 space-y-4">
             <h3 className="text-lg font-bold text-white">Create New Task</h3>
@@ -237,7 +238,8 @@ const KanbanBoard = ({ tasks, projectId, onTaskUpdate, onOpenChatForTask, projec
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

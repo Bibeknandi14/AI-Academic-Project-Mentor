@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     
     # LLM Settings
     GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-1.5-flash"  # Easily configure model: gemini-1.5-flash, gemini-2.0-flash, gemini-1.5-pro, etc.
+    GEMINI_MODEL_NAME: str = "gemini-3.6-flash"  # Easily configure model: gemini-3.6-flash, gemini-2.0-flash, gemini-1.5-pro, etc.
     OPENAI_API_KEY: Optional[str] = None
     LLM_PROVIDER: str = "gemini" # gemini, openai, mock
     

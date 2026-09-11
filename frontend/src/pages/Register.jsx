@@ -31,9 +31,16 @@ const Register = () => {
     setLoading(true);
     try {
       // Strip empty optional fields so the backend ignores them
-      const payload = { ...formData };
+      const payload = {
+        ...formData,
+        email: formData.email.trim(),
+        full_name: formData.full_name.trim(),
+      };
       if (!payload.mentor_code) delete payload.mentor_code;
+      else payload.mentor_code = payload.mentor_code.trim();
+
       if (!payload.github_username) delete payload.github_username;
+      else payload.github_username = payload.github_username.trim();
 
       await register(payload);
       navigate('/login', { state: { registered: true } });

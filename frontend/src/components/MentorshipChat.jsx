@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Sparkles, CheckCircle, Code, Info, Terminal, AlertCircle, RefreshCw, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Send, Bot, User, Sparkles, CheckCircle, Code, Info, Terminal, AlertCircle, RefreshCw, X, Loader2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
 const MentorshipChat = ({ projectId, activeTask }) => {
@@ -254,7 +256,7 @@ const MentorshipChat = ({ projectId, activeTask }) => {
       </form>
 
       {/* Context Inspector Modal */}
-      {selectedContext && (
+      {selectedContext && createPortal(
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-card max-w-xl w-full p-6 space-y-4 max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -272,7 +274,8 @@ const MentorshipChat = ({ projectId, activeTask }) => {
               {JSON.stringify(selectedContext, null, 2)}
             </pre>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

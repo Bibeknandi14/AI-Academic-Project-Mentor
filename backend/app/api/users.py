@@ -12,7 +12,7 @@ from sqlalchemy.future import select
 from app.api.deps import get_db, get_current_user
 from app.models.user import User, UserRole
 from app.models.project import Project, ProjectMember
-from app.schemas.user import UserResponse
+from app.schemas.user import UserResponse, AssignedMentorInfo
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -80,7 +80,22 @@ async def link_mentor(
 
     await db.commit()
     await db.refresh(student)
-    return student
+    return UserResponse(
+        id=student.id,
+        email=student.email,
+        full_name=student.full_name,
+        role=student.role,
+        github_username=student.github_username,
+        assigned_mentor_id=student.assigned_mentor_id,
+        mentor_code=student.mentor_code,
+        created_at=student.created_at,
+        assigned_mentor=AssignedMentorInfo(
+            id=mentor.id,
+            full_name=mentor.full_name,
+            email=mentor.email,
+            mentor_code=mentor.mentor_code,
+        ),
+    )
 
 
 @router.delete("/me/mentor", response_model=UserResponse)
@@ -113,4 +128,14 @@ async def unlink_mentor(
 
     await db.commit()
     await db.refresh(student)
-    return student
+    return UserResponse(
+        id=student.id,
+        email=student.email,
+        full_name=student.full_name,
+        role=student.role,
+        github_username=student.github_username,
+        assigned_mentor_id=student.assigned_mentor_id,
+        mentor_code=student.mentor_code,
+        created_at=student.created_at,
+        assigned_mentor=None,
+    )
