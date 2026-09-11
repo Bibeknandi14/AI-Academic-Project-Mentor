@@ -19,6 +19,7 @@ class Project(Base):
     # Lifecycle status: "active" | "pending_deletion" | "completed"
     status = Column(String, nullable=False, default="active", index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
 
 class ProjectMember(Base):
     __tablename__ = "project_members"

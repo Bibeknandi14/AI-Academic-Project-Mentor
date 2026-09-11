@@ -29,6 +29,7 @@ class ProjectResponse(ProjectBase):
     id: str
     mentor_id: Optional[str] = None
     created_at: datetime
+    completed_at: Optional[datetime] = None
     total_tasks: Optional[int] = 0
     completed_tasks: Optional[int] = 0
     commit_count: Optional[int] = 0

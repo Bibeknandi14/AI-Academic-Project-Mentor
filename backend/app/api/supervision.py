@@ -62,6 +62,7 @@ async def _project_summary(proj: Project, db: AsyncSession) -> ProjectSummary:
         status=proj.status,
         github_repo=proj.github_repo,
         mentor_id=proj.mentor_id,
+        completed_at=proj.completed_at,
         total_tasks=t_total,
         completed_tasks=t_done,
         commit_count=c_total,
@@ -150,24 +151,34 @@ async def mark_project_complete(
     """Mark a supervised project as completed. Only the project's assigned mentor can do this."""
     proj = await _assert_mentor_owns_project(project_id, mentor, db)
     proj.status = "completed"
+    proj.completed_at = datetime.utcnow()
 
-    # Find the student owner for the activity log
+    # Find the student owner for the activity log and notification
     owner_res = await db.execute(
         select(ProjectMember).where(
             ProjectMember.project_id == project_id,
             ProjectMember.role == "OWNER",
         )
     )
-    owner_member = owner_res.scalars().first()
+    owner = owner_res.scalars().first()
 
     db.add(MentorActivityLog(
         id=str(uuid.uuid4()),
         mentor_id=mentor.id,
         action_type="marked_completed",
-        student_id=owner_member.user_id if owner_member else None,
+        student_id=owner.user_id if owner else None,
         project_id=project_id,
-        detail=f"Marked project '{proj.title}' as completed",
+        detail=f"Marked project '{proj.title}' as completed.",
     ))
+
+    if owner:
+        db.add(Notification(
+            id=str(uuid.uuid4()),
+            user_id=owner.user_id,
+            related_project_id=project_id,
+            type="project_completed",
+            message=f"Your mentor marked project '{proj.title}' as completed.",
+        ))
 
     await db.commit()
     await db.refresh(proj)

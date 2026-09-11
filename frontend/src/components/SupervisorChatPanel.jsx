@@ -121,7 +121,7 @@ const SupervisorChatPanel = ({ projectId, mentorId }) => {
         {messages.map((msg) => {
           const mine = isMine(msg);
           return (
-            <div key={msg.id} className={`flex gap-2.5 ${mine ? 'justify-end' : 'justify-start'}`}>
+            <div key={msg.id} className={`flex gap-2.5 w-full ${mine ? 'justify-end' : 'justify-start'}`}>
               {!mine && (
                 <div className="h-8 w-8 rounded-lg bg-emerald-900/50 border border-emerald-700/40 flex items-center justify-center text-emerald-400 shrink-0 mt-1">
                   {user?.role === 'STUDENT' ? (

@@ -1,19 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { GitCommit, RefreshCw, ExternalLink, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import { GitCommit, RefreshCw, ExternalLink, CheckCircle2, AlertCircle, Clock, Edit2, Save, X } from 'lucide-react';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
-const GitHubCommitFeed = ({ projectId, githubRepo }) => {
+const GitHubCommitFeed = ({ projectId, githubRepo, onProjectUpdated }) => {
+  const { user } = useAuth();
   const [commits, setCommits] = useState([]);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
+  const [isEditingRepo, setIsEditingRepo] = useState(false);
+  const [repoInput, setRepoInput] = useState('');
+  const [savingRepo, setSavingRepo] = useState(false);
+  const [repoError, setRepoError] = useState('');
 
   useEffect(() => {
     if (projectId) {
       fetchCommits();
+      setRepoInput(githubRepo || '');
+      setIsEditingRepo(false);
+      setRepoError('');
     } else {
       setCommits([]);
     }
-  }, [projectId]);
+  }, [projectId, githubRepo]);
 
   const fetchCommits = async () => {
     if (!projectId) return;
@@ -40,6 +49,30 @@ const GitHubCommitFeed = ({ projectId, githubRepo }) => {
     }
   };
 
+  const handleSaveRepo = async () => {
+    if (!projectId) return;
+    setSavingRepo(true);
+    setRepoError('');
+    try {
+      const res = await api.patch(`/projects/${projectId}`, {
+        github_repo: repoInput.trim() || null
+      });
+      setIsEditingRepo(false);
+      if (onProjectUpdated) {
+        onProjectUpdated(res.data);
+      }
+      // If we linked a new repo, try to fetch commits
+      if (repoInput.trim()) {
+        fetchCommits();
+      }
+    } catch (err) {
+      console.error("Failed to update repo", err);
+      setRepoError("Failed to update repository link. Make sure you own this project.");
+    } finally {
+      setSavingRepo(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-5 rounded-2xl border border-slate-800/80">
@@ -48,9 +81,50 @@ const GitHubCommitFeed = ({ projectId, githubRepo }) => {
             <GitCommit className="h-5 w-5 text-indigo-400" />
             GitHub Commit Progress Tracker
           </h3>
-          <p className="text-xs text-slate-400 mt-1">
-            Repo Link: <span className="font-mono text-indigo-300">{githubRepo || 'Not configured'}</span>
-          </p>
+          <div className="mt-1 flex items-center gap-2">
+            <span className="text-xs text-slate-400">Repo Link:</span>
+            {!isEditingRepo ? (
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-indigo-300 text-sm">{githubRepo || 'Not configured'}</span>
+                {user?.role === 'STUDENT' && projectId && (
+                  <button 
+                    onClick={() => { setIsEditingRepo(true); setRepoInput(githubRepo || ''); }}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 ml-2"
+                  >
+                    <Edit2 className="h-3 w-3" /> {githubRepo ? 'Change' : 'Link Repository'}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={repoInput}
+                  onChange={(e) => setRepoInput(e.target.value)}
+                  placeholder="owner/repo (e.g. facebook/react)"
+                  className="glass-input px-2 py-1 text-xs font-mono text-white w-48 focus:ring-1 focus:ring-indigo-500"
+                  disabled={savingRepo}
+                />
+                <button 
+                  onClick={handleSaveRepo} 
+                  disabled={savingRepo}
+                  className="p-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50"
+                  title="Save"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                </button>
+                <button 
+                  onClick={() => setIsEditingRepo(false)} 
+                  disabled={savingRepo}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
+                  title="Cancel"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+          {repoError && <p className="text-[10px] text-rose-400 mt-1">{repoError}</p>}
         </div>
 
         <button

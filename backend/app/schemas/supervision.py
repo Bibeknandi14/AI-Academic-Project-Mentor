@@ -14,6 +14,7 @@ class ProjectSummary(BaseModel):
     completed_tasks: int = 0
     commit_count: int = 0
     latest_commit_date: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
     is_at_risk: bool = False
 
     model_config = {"from_attributes": True}

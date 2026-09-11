@@ -61,6 +61,7 @@ async def _build_project_response(proj: Project, db: AsyncSession) -> ProjectRes
         mentor_id=proj.mentor_id,
         status=proj.status,
         created_at=proj.created_at,
+        completed_at=proj.completed_at,
         total_tasks=total_tasks,
         completed_tasks=completed_tasks,
         commit_count=commit_count,
@@ -153,6 +154,28 @@ async def create_project(
     await db.commit()
     await db.refresh(project)
     return await _build_project_response(project, db)
+
+
+@router.patch("/{project_id}", response_model=ProjectResponse)
+async def update_project(
+    project_id: str,
+    project_in: ProjectUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Update a project's details (e.g., github_repo).
+    Only an OWNER of the project can update it.
+    """
+    proj = await _assert_owner(project_id, current_user, db)
+
+    update_data = project_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(proj, field, value)
+
+    await db.commit()
+    await db.refresh(proj)
+    return await _build_project_response(proj, db)
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)

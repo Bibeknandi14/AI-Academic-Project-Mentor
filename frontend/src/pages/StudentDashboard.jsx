@@ -63,6 +63,13 @@ const StudentDashboard = () => {
     } catch (err) { console.error('Failed to load projects', err); }
   };
 
+  const handleProjectUpdated = (updatedProject) => {
+    setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
+    if (selectedProject?.id === updatedProject.id) {
+      setSelectedProject(updatedProject);
+    }
+  };
+
   const fetchTasks = async (projectId) => {
     try {
       const res = await api.get(`/tasks/project/${projectId}`);
@@ -354,6 +361,7 @@ const StudentDashboard = () => {
             <GitHubCommitFeed
               projectId={selectedProject?.id}
               githubRepo={selectedProject?.github_repo}
+              onProjectUpdated={handleProjectUpdated}
             />
           )}
 

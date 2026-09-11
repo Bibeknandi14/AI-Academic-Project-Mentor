@@ -22,6 +22,7 @@ import app.models.notification
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print(f"🚀 STARTUP: App is using Gemini model '{getattr(settings, 'GEMINI_MODEL_NAME', 'unknown')}'")
     # Initialize DB tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -40,6 +41,10 @@ async def lifespan(app: FastAPI):
             pass
         try:
             await conn.exec_driver_sql("ALTER TABLE projects ADD COLUMN status VARCHAR NOT NULL DEFAULT 'active'")
+        except Exception:
+            pass
+        try:
+            await conn.exec_driver_sql("ALTER TABLE projects ADD COLUMN completed_at DATETIME")
         except Exception:
             pass
 

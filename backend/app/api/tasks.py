@@ -8,6 +8,7 @@ from sqlalchemy.future import select
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
 from app.models.task import Task, TaskStatus
+from app.models.project import Project
 from app.schemas.task import TaskCreate, TaskResponse, TaskUpdate
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
@@ -44,6 +45,13 @@ async def create_task(
         git_branch=task_in.git_branch
     )
     db.add(task)
+    
+    # Revert project status to active if a new task is created
+    proj_result = await db.execute(select(Project).where(Project.id == task_in.project_id))
+    proj = proj_result.scalars().first()
+    if proj and proj.status == "completed":
+        proj.status = "active"
+
     await db.commit()
     await db.refresh(task)
     return task

@@ -237,26 +237,26 @@ const MentorDashboard = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <div className="glass-card p-5 space-y-2">
                   <span className="text-xs font-semibold text-slate-400 uppercase">Assigned Projects</span>
-                  <div className="text-3xl font-extrabold text-white">{projects.length}</div>
+                  <div className="text-3xl font-extrabold text-white">{projects.filter(p => p.status !== 'completed').length}</div>
                   <p className="text-xs text-slate-500">Active student teams</p>
                 </div>
                 <div className="glass-card p-5 space-y-2">
                   <span className="text-xs font-semibold text-slate-400 uppercase">Healthy Progress</span>
-                  <div className="text-3xl font-extrabold text-emerald-400">{projects.filter((p) => !p.is_at_risk).length}</div>
+                  <div className="text-3xl font-extrabold text-emerald-400">{projects.filter((p) => p.status !== 'completed' && !p.is_at_risk).length}</div>
                   <p className="text-xs text-emerald-500/80">Active commits & on-schedule sprints</p>
                 </div>
                 <div className="glass-card p-5 space-y-2 border-rose-900/40">
                   <span className="text-xs font-semibold text-rose-400 uppercase">Projects At Risk</span>
-                  <div className="text-3xl font-extrabold text-rose-400">{projects.filter((p) => p.is_at_risk).length}</div>
+                  <div className="text-3xl font-extrabold text-rose-400">{projects.filter((p) => p.status !== 'completed' && p.is_at_risk).length}</div>
                   <p className="text-xs text-rose-500/80">Inactive commits or delayed tasks</p>
                 </div>
               </div>
 
               {/* Project cards */}
               <div className="space-y-4">
-                <h3 className="text-base font-bold text-slate-200">Student Team Projects</h3>
+                <h3 className="text-base font-bold text-slate-200">Active Student Team Projects</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {projects.map((proj) => {
+                  {projects.filter(p => p.status !== 'completed').map((proj) => {
                     const pct = proj.total_tasks > 0
                       ? Math.round((proj.completed_tasks / proj.total_tasks) * 100) : 0;
                     return (
@@ -357,57 +357,95 @@ const MentorDashboard = () => {
                     {student.projects.length === 0 ? (
                       <p className="text-xs text-slate-500 italic">No projects linked to this student yet.</p>
                     ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {student.projects.map((proj) => {
-                          const pct = proj.total_tasks > 0
-                            ? Math.round((proj.completed_tasks / proj.total_tasks) * 100) : 0;
-                          return (
-                            <div
-                              key={proj.id}
-                              onClick={() => handleOpenStudentDetail(student, proj)}
-                              className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3 hover:border-indigo-500/50 cursor-pointer transition-all group"
-                            >
-                              <div className="flex items-center justify-between">
-                                <p className="text-sm font-bold text-slate-100 group-hover:text-indigo-300 transition-colors flex items-center gap-2">
-                                  {proj.title}
-                                  <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                </p>
-                                <div className="flex items-center gap-2">
-                                  {proj.status === 'pending_deletion' && (
-                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-400 border border-amber-800/60">Deletion Pending</span>
-                                  )}
-                                  {proj.is_at_risk && (
-                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-950/80 text-rose-400 border border-rose-800/60">At Risk</span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="space-y-1">
-                                <div className="flex justify-between text-xs text-slate-400">
-                                  <span>Progress</span>
-                                  <span className="text-indigo-400">{pct}% ({proj.completed_tasks}/{proj.total_tasks} tasks)</span>
-                                </div>
-                                <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
-                                  <div className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all" style={{ width: `${pct}%` }} />
-                                </div>
-                              </div>
-                              <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
-                                <span className="flex items-center gap-1"><GitCommit className="h-3 w-3 text-indigo-400" /> {proj.commit_count} commits</span>
-                                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                  {proj.status === 'active' && (
-                                    <button
-                                      onClick={() => handleMarkComplete(proj.id)}
-                                      disabled={actionLoading === proj.id}
-                                      className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-950/60 border border-emerald-800/50 text-emerald-300 hover:bg-emerald-950 transition-all text-[10px] font-bold disabled:opacity-50"
-                                    >
-                                      {actionLoading === proj.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-                                      Mark Complete
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
+                      <div className="space-y-6">
+                        {/* Active Projects */}
+                        {student.projects.filter(p => p.status !== 'completed').length > 0 && (
+                          <div className="space-y-3">
+                            <h4 className="text-sm font-semibold text-slate-300">Active Projects</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {student.projects.filter(p => p.status !== 'completed').map((proj) => {
+                                const pct = proj.total_tasks > 0
+                                  ? Math.round((proj.completed_tasks / proj.total_tasks) * 100) : 0;
+                                return (
+                                  <div
+                                    key={proj.id}
+                                    onClick={() => handleOpenStudentDetail(student, proj)}
+                                    className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3 hover:border-indigo-500/50 cursor-pointer transition-all group"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-sm font-bold text-slate-100 group-hover:text-indigo-300 transition-colors flex items-center gap-2">
+                                        {proj.title}
+                                        <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                      </p>
+                                      <div className="flex items-center gap-2">
+                                        {proj.status === 'pending_deletion' && (
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-400 border border-amber-800/60">Deletion Pending</span>
+                                        )}
+                                        {proj.is_at_risk && (
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-950/80 text-rose-400 border border-rose-800/60">At Risk</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="flex justify-between text-xs text-slate-400">
+                                        <span>Progress</span>
+                                        <span className="text-indigo-400">{pct}% ({proj.completed_tasks}/{proj.total_tasks} tasks)</span>
+                                      </div>
+                                      <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
+                                        <div className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all" style={{ width: `${pct}%` }} />
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+                                      <span className="flex items-center gap-1"><GitCommit className="h-3 w-3 text-indigo-400" /> {proj.commit_count} commits</span>
+                                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                        {proj.status === 'active' && (
+                                          <button
+                                            onClick={() => handleMarkComplete(proj.id)}
+                                            disabled={actionLoading === proj.id}
+                                            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-950/60 border border-emerald-800/50 text-emerald-300 hover:bg-emerald-950 transition-all text-[10px] font-bold disabled:opacity-50"
+                                          >
+                                            {actionLoading === proj.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                                            Mark Complete
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
-                          );
-                        })}
+                          </div>
+                        )}
+
+                        {/* Completed Projects */}
+                        {student.projects.filter(p => p.status === 'completed').length > 0 && (
+                          <div className="space-y-3 pt-3 border-t border-slate-800">
+                            <h4 className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+                              <CheckCircle2 className="h-4 w-4" /> Completed Projects
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {student.projects.filter(p => p.status === 'completed').map((proj) => (
+                                <div
+                                  key={proj.id}
+                                  onClick={() => handleOpenStudentDetail(student, proj)}
+                                  className="p-4 rounded-xl bg-slate-900/40 border border-slate-800/60 opacity-80 space-y-3 hover:opacity-100 hover:border-slate-600 cursor-pointer transition-all group"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-sm font-bold text-slate-300 group-hover:text-slate-200 transition-colors flex items-center gap-2">
+                                      {proj.title}
+                                      <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    </p>
+                                    {proj.completed_at && (
+                                      <span className="text-[10px] text-slate-500">
+                                        Finished {new Date(proj.completed_at).toLocaleDateString()}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
